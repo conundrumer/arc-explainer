@@ -14,19 +14,13 @@ Create a web interface that allows users to:
 ## Data Structures
 
 ```typescript
-// Core types
-type IOGrid = {
-  input: number[][];
-  output: number[][];
+type Task = {
+  train: { input: number[][]; output: number[][] }[];
+  test: { input: number[][]; output?: number[][] }[];
 };
 
-type Challenge = {
-  train: IOGrid[];
-  test: IOGrid[];
-};
-
-type ChallengeDataset = {
-  [taskId: string]: Challenge;
+type Dataset = {
+  [taskId: string]: Task;
 };
 
 type Submission = {
@@ -36,17 +30,14 @@ type Submission = {
   }[];
 };
 
-// Metadata for complexity ranking (cached)
 type TaskMetadata = {
-  taskId: string;           // Original ARC-AGI task ID (e.g., "007bbfb7")
-  numTrain: number;         // Number of training examples
-  numTest: number;          // Number of test examples
-  verifierLOC: number;      // Lines of code in re-arc verifier (complexity proxy)
+  numTrain: number;
+  numTest: number;
+  verifierLOC: number;
 };
 
-type MetadataCache = {
-  version: string;          // Re-arc version used
-  tasks: TaskMetadata[];    // All 400 tasks, sorted by LOC descending
+type ReArcMetadata = {
+  [taskId: string]: TaskMetadata;  // Keyed by original ARC-AGI task ID
 };
 ```
 
@@ -67,16 +58,16 @@ type MetadataCache = {
 4. Regenerate dataset deterministically using same seed and n_tasks
 5. Compare submission attempts to regenerated ground truth
 6. Score using ARC-AGI rules (ANY correct attempt = task solved)
-7. Return results with per-task breakdown + decoded message
+7. Return score + decoded message
 
 ### Components
 
 **Backend (Priority):**
 - reArcController: /generate and /verify endpoints
 - reArcService: orchestrate Python re-arc calls
-- reArcSeed utils: XOR logic for task IDs
+- reArcSeed utils: XOR logic and message encoding/decoding
 - Python scripts: wrap re-arc library
-- arc_task_metadata.json: cached complexity rankings (version controlled)
+- rearc_complexity_rankings.json: cached metadata (version controlled)
 
 **Frontend (Later):**
 - TBD - design after backend works
@@ -95,13 +86,11 @@ type MetadataCache = {
 ## Implementation Steps
 
 ### Phase 1: Setup & Install
-- [x] Review re-arc library documentation (https://github.com/michaelhodel/re-arc)
-- [x] Understand generation parameters and API
-- [x] Get user approval on key decisions (APPROVED: variable tasks 1-400, complexity filtering, LOC ranking)
-- [ ] Install re-arc library (clone from GitHub)
-- [ ] Understand how to extract verifier LOC from re-arc codebase
+- [ ] Clone re-arc library from GitHub
+- [ ] Review re-arc codebase structure (generators.py, verifiers.py, main.py)
+- [ ] Understand how to extract verifier LOC
 - [ ] Test re-arc generation with sample seed
-- [ ] Verify XOR seed approach produces deterministic results
+- [ ] Verify deterministic generation
 
 ### Phase 1.5: Metadata Pre-processing
 - [ ] Create script to extract metadata from all 400 ARC tasks
@@ -109,8 +98,8 @@ type MetadataCache = {
   - [ ] Count train/test examples
   - [ ] Extract verifier function from re-arc `verifiers.py`
   - [ ] Count lines of code in verifier function
-- [ ] Generate `arc_task_metadata.json` with complexity rankings
-- [ ] Cache this file (one-time generation, version control it)
+- [ ] Generate `data/rearc_complexity_rankings.json`
+- [ ] Version control this file
 
 ### Phase 2: Core Infrastructure
 - [ ] Create type definitions in `shared/types.ts`
@@ -131,27 +120,18 @@ Design and implement UI once backend is working
 
 ## Key Technical Details
 
-### Task ID Structure & Steganographic String Encoding
-**Format:** 8 hex chars (32 bits) = upper 16 bits + lower 16 bits
-- **Upper 16 bits:** Random from PRNG(seed), must be unique (collision detection)
-- **Lower 16 bits:** Random from PRNG, optionally XOR'd with hidden UTF-8 message
+### XOR Seed Recovery & Steganographic Encoding
+**Task IDs:** 8 hex chars (32 bits)
+- Upper 16 bits: unique random from PRNG(seed)
+- Lower 16 bits: random from PRNG, optionally XOR'd with message bytes
 
-**Steganographic encoding (optional):**
-1. Generate (n-1) IDs from PRNG(seed), ensure upper bytes unique
-2. Compute nth ID so `XOR(all_ids) = seed`
-3. Sort all IDs by full 32-bit value
-4. Save original lower bytes: `original_lower[i] = sorted_ids[i].lower`
-5. XOR string into lower bytes (looks like random noise):
-   - `sorted[0].lower ^= string_length`
-   - `sorted[1..n-2].lower ^= string_bytes` (2 bytes per ID)
-   - `sorted[n-1].lower ^= XOR(all_string_bytes)` ← compensates to preserve seed
-6. Max string length: `(n_tasks - 1) * 2` bytes
+**Seed recovery:** `XOR(all_task_ids) = seed`
 
-**Seed recovery & decoding:**
-- `XOR(all_ids) = seed` (always works - compensation maintains this)
-- Decode: Regenerate PRNG sequence → get original_lower[i] → XOR back
-  - `string_bytes[i] = sorted[i].lower ^ original_lower[i]`
-- String is invisible without knowing the seed!
+**Optional message encoding:**
+- XOR raw bytes into lower 16 bits of sorted IDs
+- Decode by regenerating PRNG sequence and XOR'ing back
+- Looks like random noise without seed
+- Max message: `(n_tasks - 1) * 2` bytes
 
 ### Task Mapping
 - Sort original ARC tasks by complexity (LOC descending)
@@ -178,7 +158,7 @@ server/
 
 **Data:**
 ```
-data/arc_task_metadata.json
+data/rearc_complexity_rankings.json
 ```
 
 **Types:**
@@ -190,14 +170,13 @@ shared/types.ts (add ReARC types)
 
 **Generation endpoint:**
 - `n_tasks`: 1-400 (how many tasks)
-- `diff_lb`, `diff_ub`: 0-1 (re-arc difficulty bounds)
 - `seed`: optional (for reproducibility)
-- `message`: optional UTF-8 string to encode in task IDs (max `(n_tasks-2)*2` bytes)
+- `message`: optional raw bytes to encode in task IDs (max `(n_tasks-1)*2` bytes)
 
 **Verification endpoint:**
 - `submission`: JSON object with task IDs and attempts
 
-**Backend dependencies:**
-- `arc_task_metadata.json`: task IDs sorted by LOC
-- re-arc library: generate examples matching train/test counts
+**Internal (not exposed via API):**
+- `diff_lb`, `diff_ub`: re-arc difficulty bounds (hardcoded or config)
+- `rearc_complexity_rankings.json`: task metadata sorted by LOC
 
