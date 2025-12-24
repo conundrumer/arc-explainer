@@ -131,24 +131,27 @@ Design and implement UI once backend is working
 
 ## Key Technical Details
 
-### Task ID Structure & String Encoding
+### Task ID Structure & Steganographic String Encoding
 **Format:** 8 hex chars (32 bits) = upper 16 bits + lower 16 bits
-- **Upper 16 bits:** Random from PRNG(seed), must be unique (no collisions)
-- **Lower 16 bits:** Encodes optional UTF-8 string message
+- **Upper 16 bits:** Random from PRNG(seed), must be unique (collision detection)
+- **Lower 16 bits:** Random from PRNG, optionally XOR'd with hidden UTF-8 message
 
-**String encoding (optional):**
-1. Generate (n-1) IDs with unique upper bytes
-2. Compute last ID's upper bytes: `XOR(all_upper) = seed >> 16`
+**Steganographic encoding (optional):**
+1. Generate (n-1) IDs from PRNG(seed), ensure upper bytes unique
+2. Compute nth ID so `XOR(all_ids) = seed`
 3. Sort all IDs by full 32-bit value
-4. Encode string in lower bytes:
-   - `ids_sorted[0].lower = string_length` (bytes)
-   - `ids_sorted[1..n-2].lower = string_bytes` (2 bytes per ID)
-   - `ids_sorted[n-1].lower = (seed & 0xFFFF) ^ XOR(all_string_bytes)`
-5. Max string length: `(n_tasks - 2) * 2` bytes
+4. Save original lower bytes: `original_lower[i] = sorted_ids[i].lower`
+5. XOR string into lower bytes (looks like random noise):
+   - `sorted[0].lower ^= string_length`
+   - `sorted[1..n-2].lower ^= string_bytes` (2 bytes per ID)
+   - `sorted[n-1].lower ^= XOR(all_string_bytes)` ← compensates to preserve seed
+6. Max string length: `(n_tasks - 1) * 2` bytes
 
-**Seed recovery:**
-- `XOR(all_ids) = seed` (always works, regardless of string encoding)
-- Decode string: extract from sorted IDs using `seed & 0xFFFF`
+**Seed recovery & decoding:**
+- `XOR(all_ids) = seed` (always works - compensation maintains this)
+- Decode: Regenerate PRNG sequence → get original_lower[i] → XOR back
+  - `string_bytes[i] = sorted[i].lower ^ original_lower[i]`
+- String is invisible without knowing the seed!
 
 ### Task Mapping
 - Sort original ARC tasks by complexity (LOC descending)
