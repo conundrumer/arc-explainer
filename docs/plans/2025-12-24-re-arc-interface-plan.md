@@ -173,37 +173,64 @@ function seedToTaskIds(seed: number, count: number): string[];
 - Sufficient entropy for seed generation
 - Human-readable in URLs/debugging
 
-### 2. XOR Seed Algorithm (DECIDED)
+### 2. Seed & Task ID Generation (DECIDED)
+**XOR Technique:** Generate 399 random IDs, then compute the 400th as XOR of all 399 + seed.
+This ensures XORing all 400 IDs recovers the original seed.
+
 **Implementation:**
 ```typescript
-function taskIdsToSeed(taskIds: string[]): number {
-  let seed = 0;
-  for (const id of taskIds) {
-    // Convert hex string to number, XOR accumulate
-    const idNum = parseInt(id, 16);
-    seed ^= idNum;
-  }
-  return seed >>> 0; // Ensure unsigned 32-bit
-}
-
-// Reverse: generate task IDs from seed
-function generateTaskIds(seed: number, count: number): string[] {
-  const rng = seedRandom(seed); // Use seeded PRNG
+// Generate 400 task IDs from seed using XOR trick
+function generateTaskIds(seed: number): string[] {
+  const rng = seedRandom(seed); // Use seeded PRNG (e.g., seedrandom library)
   const ids: string[] = [];
-  for (let i = 0; i < count; i++) {
+
+  // Generate first 399 IDs randomly
+  for (let i = 0; i < 399; i++) {
     const randomHex = Math.floor(rng() * 0xFFFFFFFF).toString(16).padStart(8, '0');
     ids.push(randomHex);
   }
-  return ids;
+
+  // 400th ID = XOR of all 399 IDs plus seed
+  let xor = seed;
+  for (const id of ids) {
+    xor ^= parseInt(id, 16);
+  }
+  ids.push(xor.toString(16).padStart(8, '0'));
+
+  return ids; // 400 IDs total
+}
+
+// XOR all 400 task IDs to recover the seed
+function taskIdsToSeed(taskIds: string[]): number {
+  let seed = 0;
+  for (const id of taskIds) {
+    seed ^= parseInt(id, 16);
+  }
+  return seed >>> 0; // Unsigned 32-bit
+}
+// Proof: id[0] ^ ... ^ id[398] ^ (id[0] ^ ... ^ id[398] ^ seed) = seed
+
+
+// Create 1-to-1 mapping between original and generated IDs
+function createTaskMapping(generatedIds: string[]): Map<string, string> {
+  const originalIds = getOriginalArcTaskIds(); // Read from data/training/*.json
+  const sortedOriginal = originalIds.sort(); // Alphabetical sort
+
+  const mapping = new Map<string, string>();
+  for (let i = 0; i < 400; i++) {
+    mapping.set(generatedIds[i], sortedOriginal[i]); // generated → original
+  }
+  return mapping;
 }
 ```
 
-### 3. Train/Test Split Logic (DECIDED)
+### 3. Train/Test Matching (DECIDED)
 **Approach:**
-- Generate 10 examples per task using re-arc
-- Randomly select 2-5 for train (weighted distribution: 10% for 2, 30% for 3, 30% for 4, 30% for 5)
-- Randomly select 1 remaining for test
-- Use same seed to ensure deterministic split
+- Read original task from `data/training/{original_id}.json`
+- Get exact train/test counts (e.g., 5 train, 1 test)
+- Call re-arc generator for that specific original task
+- Generate **same number** of train and test examples
+- No random splitting needed - exact 1-to-1 structure match
 
 ### 4. Verification Scoring (DECIDED)
 **Match ARC-AGI scoring (see CLAUDE.md):**
@@ -281,14 +308,26 @@ generate_dataset(
 )
 ```
 
-**Our approach:**
-1. Generate 400 task IDs (8-char hex)
-2. XOR them together → seed
-3. Call re-arc `generate_dataset(seed=seed, n_examples=10, diff_lb=X, diff_ub=Y)`
-4. For each task, randomly split generated examples:
-   - Select 2-5 for training (weighted toward 3)
-   - Select 1 for test
-5. Format as ARC-AGI structure: `{"train": [...], "test": [...]}`
+**Our approach (FINAL):**
+1. User provides initial seed (or we generate one random seed)
+2. PRNG generates **399** random task IDs (8-char hex)
+3. Compute **400th ID** = `id[0] ^ id[1] ^ ... ^ id[398] ^ seed`
+4. Sort original ARC-AGI task IDs alphabetically (007bbfb7, ..., ff805c23)
+5. Create 1-to-1 mapping: `generated_ids[i] ↔ sorted_original[i]`
+6. For each mapping:
+   - Read original task structure (e.g., `007bbfb7.json`: 5 train, 1 test)
+   - Use re-arc generator for that specific task
+   - Generate same number of train/test examples using re-arc
+   - Assign to the generated task ID
+7. Output: `{[generated_id]: {train: [...re-arc variations...], test: [...]}, ...}`
+
+**Verification approach:**
+1. Extract all 400 task IDs from submission
+2. XOR all 400 IDs together → recovers original seed (XOR trick!)
+3. Regenerate 400 IDs using that seed (deterministic PRNG + XOR)
+4. Recreate the 1-to-1 mapping with sorted original tasks
+5. Regenerate dataset using re-arc with the same seed (deterministic)
+6. Verify submission attempts against regenerated ground truth
 
 ## Security Considerations
 
