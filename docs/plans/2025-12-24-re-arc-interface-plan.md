@@ -68,43 +68,28 @@ type MetadataCache = {
 5. Score using ARC-AGI rules (ANY correct attempt = task solved)
 6. Return results with per-task breakdown
 
-### Components Needed
+### Components
 
-**Frontend:**
-- ReArcGeneratorPage: form inputs, download button
-- ReArcVerifierPage: file upload, results display
-
-**Backend:**
+**Backend (Priority):**
 - reArcController: /generate and /verify endpoints
 - reArcService: orchestrate Python re-arc calls
 - reArcSeed utils: XOR logic for task IDs
 - Python scripts: wrap re-arc library
-
-**Data:**
 - arc_task_metadata.json: cached complexity rankings (version controlled)
 
-## Following Existing Patterns
+**Frontend (Later):**
+- TBD - design after backend works
 
-**Controller Pattern (see `server/controllers/`):**
+## Backend Patterns (from existing codebase)
+
+**Controllers:**
 - Export functions wrapped with `asyncHandler` middleware
-- Use `formatResponse` utility for consistent API responses
-- Import from repositories/services, don't do DB queries directly
+- Use `formatResponse` utility for consistent responses
+- Import from services, don't do DB queries directly
 
-**Service Pattern (see `server/services/poetiq/`):**
-- Main service file orchestrates Python subprocess calls
-- Use `child_process.spawn` for Python scripts
+**Services:**
+- Orchestrate Python subprocess calls via `child_process.spawn`
 - Handle stdout/stderr streaming for progress updates
-
-**Frontend Patterns:**
-- Use TanStack Query hooks for API calls (see existing pages)
-- Reuse shadcn/ui components (Card, Button, Table, etc.)
-- Follow PageLayout wrapper pattern for consistent styling
-- Use Wouter for routing (`<Route path="/rearc/..." component={...} />`)
-
-**Navigation (AppNavigation.tsx):**
-- Add dropdown menu item or direct link
-- Include icon, title, description
-- Follow discriminated union pattern (NavLink | NavDropdown)
 
 ## Implementation Steps
 
@@ -140,28 +125,8 @@ type MetadataCache = {
 - [ ] Test with curl/Postman
 - [ ] Add error handling and validation
 
-### Phase 4: Frontend - Generator
-- [ ] Create `ReArcGeneratorPage.tsx` using PageLayout
-- [ ] Add form controls for generation parameters (use shadcn/ui)
-- [ ] Create DatasetDownloadButton component
-- [ ] Add route to `App.tsx`
-- [ ] Test generation flow end-to-end
-
-### Phase 5: Frontend - Verifier
-- [ ] Create `ReArcVerifierPage.tsx`
-- [ ] Create SubmissionUploader component (file input)
-- [ ] Create VerificationResults component (table/cards)
-- [ ] Add visual grid comparison (reuse existing ARC grid rendering)
-- [ ] Add route to `App.tsx`
-- [ ] Test verification flow end-to-end
-
-### Phase 6: Navigation & Polish
-- [ ] Add nav items to AppNavigation.tsx (decide: dropdown or direct links)
-- [ ] Error handling for invalid submissions
-- [ ] Loading states during generation/verification (use shadcn/ui Skeleton)
-- [ ] Validation of submission format
-- [ ] User documentation/help text
-- [ ] Git commit with detailed message
+### Phase 4: Frontend (DEFERRED)
+Design and implement UI once backend is working
 
 ## Key Technical Details
 
@@ -180,63 +145,41 @@ type MetadataCache = {
 - Task solved if ANY of 2 attempts correct (ARC-AGI rules)
 - Overall score = solved_tasks / n_tasks
 
-## Integration with Existing Webapp
-
-### Files to Create/Modify
+## Files to Create
 
 **Backend:**
 ```
 server/
-├── controllers/
-│   └── reArcController.ts          # NEW - API endpoints
-├── services/
-│   └── reArc/
-│       ├── reArcService.ts         # NEW - Main service
-│       ├── reArcGenerator.py       # NEW - Python generation script
-│       └── reArcVerifier.py        # NEW - Python verification script
-├── utils/
-│   └── reArcSeed.ts                # NEW - Seed XOR logic
-└── routes.ts                        # MODIFY - Add re-arc routes
+├── controllers/reArcController.ts
+├── services/reArc/
+│   ├── reArcService.ts
+│   ├── reArcGenerator.py
+│   └── reArcVerifier.py
+├── utils/reArcSeed.ts
+└── routes.ts (add routes)
 ```
 
-**Frontend:**
+**Data:**
 ```
-client/src/
-├── pages/
-│   ├── ReArcGeneratorPage.tsx      # NEW - Generation UI
-│   └── ReArcVerifierPage.tsx       # NEW - Verification UI
-├── components/
-│   ├── reArc/
-│   │   ├── DatasetDownloadButton.tsx   # NEW
-│   │   ├── SubmissionUploader.tsx      # NEW
-│   │   └── VerificationResults.tsx     # NEW
-│   └── layout/
-│       └── AppNavigation.tsx        # MODIFY - Add nav items
-└── App.tsx                          # MODIFY - Add routes
+data/arc_task_metadata.json
 ```
 
-**Shared:**
+**Types:**
 ```
-shared/
-└── types.ts                         # MODIFY - Add ReARC types
+shared/types.ts (add ReARC types)
 ```
 
-## Parameters
+## API Parameters
 
-**User-facing:**
-- `n_tasks`: 1-400 (how many tasks to generate)
+**Generation endpoint:**
+- `n_tasks`: 1-400 (how many tasks)
 - `diff_lb`, `diff_ub`: 0-1 (re-arc difficulty bounds)
 - `seed`: optional (for reproducibility)
 
-**Backend:**
-- Metadata cache: `arc_task_metadata.json` (task IDs sorted by LOC)
-- Re-arc library: generate examples per task with matching train/test counts
+**Verification endpoint:**
+- `submission`: JSON object with task IDs and attempts
 
-**Navigation:**
-- Add to "Misc" dropdown menu
-
-## User Flows
-
-**Generate:** Select n_tasks + difficulty → Download challenges.json
-**Verify:** Upload submission.json → See score + per-task results
+**Backend dependencies:**
+- `arc_task_metadata.json`: task IDs sorted by LOC
+- re-arc library: generate examples matching train/test counts
 
