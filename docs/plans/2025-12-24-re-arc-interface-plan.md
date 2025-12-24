@@ -94,38 +94,73 @@ function seedToTaskIds(seed: number, count: number): string[];
 // }
 ```
 
+## Following Existing Patterns
+
+**Controller Pattern (see `server/controllers/`):**
+- Export functions wrapped with `asyncHandler` middleware
+- Use `formatResponse` utility for consistent API responses
+- Import from repositories/services, don't do DB queries directly
+
+**Service Pattern (see `server/services/poetiq/`):**
+- Main service file orchestrates Python subprocess calls
+- Use `child_process.spawn` for Python scripts
+- Handle stdout/stderr streaming for progress updates
+
+**Frontend Patterns:**
+- Use TanStack Query hooks for API calls (see existing pages)
+- Reuse shadcn/ui components (Card, Button, Table, etc.)
+- Follow PageLayout wrapper pattern for consistent styling
+- Use Wouter for routing (`<Route path="/rearc/..." component={...} />`)
+
+**Navigation (AppNavigation.tsx):**
+- Add dropdown menu item or direct link
+- Include icon, title, description
+- Follow discriminated union pattern (NavLink | NavDropdown)
+
 ## Implementation Steps
 
-### Phase 1: Core Infrastructure
+### Phase 1: Research & Planning
+- [ ] Review re-arc library documentation (https://github.com/michaelhodel/re-arc)
+- [ ] Understand generation parameters and API
+- [ ] Get user approval on key decisions (task IDs, dataset size, etc.)
+- [ ] Verify XOR seed approach works with re-arc
+
+### Phase 2: Core Infrastructure
 - [ ] Create type definitions in `shared/types.ts`
 - [ ] Implement XOR seed logic in `server/utils/reArcSeed.ts`
 - [ ] Create Python wrapper scripts for re-arc library
 - [ ] Implement `reArcService.ts` with generation and verification methods
+- [ ] Test Python integration with simple script
 
-### Phase 2: Backend API
+### Phase 3: Backend API
 - [ ] Create `reArcController.ts` with generation endpoint
 - [ ] Create verification endpoint
-- [ ] Add routes to Express app
+- [ ] Add routes to `server/routes.ts` (follow existing pattern)
 - [ ] Test with curl/Postman
+- [ ] Add error handling and validation
 
-### Phase 3: Frontend - Generator
-- [ ] Create `ReArcGeneratorPage.tsx`
-- [ ] Add form controls for generation parameters
-- [ ] Implement dataset download as JSON
-- [ ] Add to routing (via Wouter)
+### Phase 4: Frontend - Generator
+- [ ] Create `ReArcGeneratorPage.tsx` using PageLayout
+- [ ] Add form controls for generation parameters (use shadcn/ui)
+- [ ] Create DatasetDownloadButton component
+- [ ] Add route to `App.tsx`
+- [ ] Test generation flow end-to-end
 
-### Phase 4: Frontend - Verifier
+### Phase 5: Frontend - Verifier
 - [ ] Create `ReArcVerifierPage.tsx`
-- [ ] Implement file upload for submission
-- [ ] Display verification results
-- [ ] Add visual grid comparison component (reuse existing grid rendering if available)
+- [ ] Create SubmissionUploader component (file input)
+- [ ] Create VerificationResults component (table/cards)
+- [ ] Add visual grid comparison (reuse existing ARC grid rendering)
+- [ ] Add route to `App.tsx`
+- [ ] Test verification flow end-to-end
 
-### Phase 5: Polish & Testing
+### Phase 6: Navigation & Polish
+- [ ] Add nav items to AppNavigation.tsx (decide: dropdown or direct links)
 - [ ] Error handling for invalid submissions
-- [ ] Loading states during generation/verification
+- [ ] Loading states during generation/verification (use shadcn/ui Skeleton)
 - [ ] Validation of submission format
-- [ ] Documentation for users
-- [ ] Add navigation links to main menu
+- [ ] User documentation/help text
+- [ ] Git commit with detailed message
 
 ## Technical Decisions to Make
 
@@ -177,32 +212,45 @@ function taskIdsToSeed(taskIds: string[]): number {
 - Task score = 1.0 if ANY attempt correct, 0.0 otherwise
 - Overall score = (solved tasks) / (total tasks)
 
-## File Structure
+## Integration with Existing Webapp
 
+### Files to Create/Modify
+
+**Backend:**
 ```
 server/
 ├── controllers/
-│   └── reArcController.ts          # API endpoints
+│   └── reArcController.ts          # NEW - API endpoints
 ├── services/
 │   └── reArc/
-│       ├── reArcService.ts         # Main service
-│       ├── reArcGenerator.py       # Python generation script
-│       └── reArcVerifier.py        # Python verification script
-└── utils/
-    └── reArcSeed.ts                # Seed XOR logic
+│       ├── reArcService.ts         # NEW - Main service
+│       ├── reArcGenerator.py       # NEW - Python generation script
+│       └── reArcVerifier.py        # NEW - Python verification script
+├── utils/
+│   └── reArcSeed.ts                # NEW - Seed XOR logic
+└── routes.ts                        # MODIFY - Add re-arc routes
+```
 
+**Frontend:**
+```
 client/src/
 ├── pages/
-│   ├── ReArcGeneratorPage.tsx      # Generation UI
-│   └── ReArcVerifierPage.tsx       # Verification UI
-└── components/
-    └── reArc/
-        ├── DatasetDownloadButton.tsx
-        ├── SubmissionUploader.tsx
-        └── VerificationResults.tsx
+│   ├── ReArcGeneratorPage.tsx      # NEW - Generation UI
+│   └── ReArcVerifierPage.tsx       # NEW - Verification UI
+├── components/
+│   ├── reArc/
+│   │   ├── DatasetDownloadButton.tsx   # NEW
+│   │   ├── SubmissionUploader.tsx      # NEW
+│   │   └── VerificationResults.tsx     # NEW
+│   └── layout/
+│       └── AppNavigation.tsx        # MODIFY - Add nav items
+└── App.tsx                          # MODIFY - Add routes
+```
 
+**Shared:**
+```
 shared/
-└── types.ts                         # Add ReARC types
+└── types.ts                         # MODIFY - Add ReARC types
 ```
 
 ## Open Questions
