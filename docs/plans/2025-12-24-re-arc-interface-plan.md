@@ -63,10 +63,11 @@ type MetadataCache = {
 ### Verification Flow
 1. User uploads submission JSON
 2. Extract task IDs, XOR to recover seed
-3. Regenerate dataset deterministically using same seed and n_tasks
-4. Compare submission attempts to regenerated ground truth
-5. Score using ARC-AGI rules (ANY correct attempt = task solved)
-6. Return results with per-task breakdown
+3. Decode optional message from sorted task IDs (if present)
+4. Regenerate dataset deterministically using same seed and n_tasks
+5. Compare submission attempts to regenerated ground truth
+6. Score using ARC-AGI rules (ANY correct attempt = task solved)
+7. Return results with per-task breakdown + decoded message
 
 ### Components
 
@@ -130,11 +131,24 @@ Design and implement UI once backend is working
 
 ## Key Technical Details
 
-### XOR Seed Recovery
-- Generate (n_tasks - 1) random 8-char hex IDs from seed
-- Compute nth ID = XOR of all previous IDs plus seed
-- Verification: XOR all n IDs recovers original seed
-- Math: `id[0] ^ ... ^ id[n-2] ^ (id[0] ^ ... ^ id[n-2] ^ seed) = seed`
+### Task ID Structure & String Encoding
+**Format:** 8 hex chars (32 bits) = upper 16 bits + lower 16 bits
+- **Upper 16 bits:** Random from PRNG(seed), must be unique (no collisions)
+- **Lower 16 bits:** Encodes optional UTF-8 string message
+
+**String encoding (optional):**
+1. Generate (n-1) IDs with unique upper bytes
+2. Compute last ID's upper bytes: `XOR(all_upper) = seed >> 16`
+3. Sort all IDs by full 32-bit value
+4. Encode string in lower bytes:
+   - `ids_sorted[0].lower = string_length` (bytes)
+   - `ids_sorted[1..n-2].lower = string_bytes` (2 bytes per ID)
+   - `ids_sorted[n-1].lower = (seed & 0xFFFF) ^ XOR(all_string_bytes)`
+5. Max string length: `(n_tasks - 2) * 2` bytes
+
+**Seed recovery:**
+- `XOR(all_ids) = seed` (always works, regardless of string encoding)
+- Decode string: extract from sorted IDs using `seed & 0xFFFF`
 
 ### Task Mapping
 - Sort original ARC tasks by complexity (LOC descending)
@@ -175,6 +189,7 @@ shared/types.ts (add ReARC types)
 - `n_tasks`: 1-400 (how many tasks)
 - `diff_lb`, `diff_ub`: 0-1 (re-arc difficulty bounds)
 - `seed`: optional (for reproducibility)
+- `message`: optional UTF-8 string to encode in task IDs (max `(n_tasks-2)*2` bytes)
 
 **Verification endpoint:**
 - `submission`: JSON object with task IDs and attempts
