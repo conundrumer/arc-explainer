@@ -119,11 +119,13 @@ function seedToTaskIds(seed: number, count: number): string[];
 
 ## Implementation Steps
 
-### Phase 1: Research & Planning
-- [ ] Review re-arc library documentation (https://github.com/michaelhodel/re-arc)
-- [ ] Understand generation parameters and API
-- [ ] Get user approval on key decisions (task IDs, dataset size, etc.)
-- [ ] Verify XOR seed approach works with re-arc
+### Phase 1: Setup & Install
+- [x] Review re-arc library documentation (https://github.com/michaelhodel/re-arc)
+- [x] Understand generation parameters and API
+- [x] Get user approval on key decisions (APPROVED: 400 tasks, 8-char hex IDs, diff_lb/diff_ub params)
+- [ ] Install re-arc library (`pip install` or clone repo)
+- [ ] Test re-arc generation with sample seed
+- [ ] Verify XOR seed approach produces deterministic results
 
 ### Phase 2: Core Infrastructure
 - [ ] Create type definitions in `shared/types.ts`
@@ -162,26 +164,17 @@ function seedToTaskIds(seed: number, count: number): string[];
 - [ ] User documentation/help text
 - [ ] Git commit with detailed message
 
-## Technical Decisions to Make
+## Technical Implementation Details
 
-### 1. Task ID Format
-**Options:**
-- Random hex strings (e.g., `a1b2c3d4`)
-- UUIDs
-- Sequential IDs with random prefix
-
-**Recommendation:** Use short hex strings (8 chars) for readability
+### 1. Task ID Format (DECIDED)
+**Using:** 8-character hex strings (e.g., `a1b2c3d4`)
+- Matches ARC-AGI convention
 - Easy to type/share
 - Sufficient entropy for seed generation
 - Human-readable in URLs/debugging
 
-### 2. XOR Seed Algorithm
-**Considerations:**
-- Task IDs need to be converted to numbers first
-- Should we hash task IDs before XOR? (prevents manipulation)
-- Endianness and bit width
-
-**Proposed approach:**
+### 2. XOR Seed Algorithm (DECIDED)
+**Implementation:**
 ```typescript
 function taskIdsToSeed(taskIds: string[]): number {
   let seed = 0;
@@ -192,25 +185,31 @@ function taskIdsToSeed(taskIds: string[]): number {
   }
   return seed >>> 0; // Ensure unsigned 32-bit
 }
+
+// Reverse: generate task IDs from seed
+function generateTaskIds(seed: number, count: number): string[] {
+  const rng = seedRandom(seed); // Use seeded PRNG
+  const ids: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const randomHex = Math.floor(rng() * 0xFFFFFFFF).toString(16).padStart(8, '0');
+    ids.push(randomHex);
+  }
+  return ids;
+}
 ```
 
-### 3. Re-ARC Generation Parameters
-**Need to determine:**
-- What parameters does re-arc support?
-- Should users control these, or use sensible defaults?
-- How many train/test pairs per task?
+### 3. Train/Test Split Logic (DECIDED)
+**Approach:**
+- Generate 10 examples per task using re-arc
+- Randomly select 2-5 for train (weighted distribution: 10% for 2, 30% for 3, 30% for 4, 30% for 5)
+- Randomly select 1 remaining for test
+- Use same seed to ensure deterministic split
 
-**Action:** Review re-arc docs and expose key parameters
-
-### 4. Verification Scoring
-**Questions:**
-- Score per task? (0.0 to 1.0 if any attempt correct)
-- Overall score? (average or sum?)
-- Should we match ARC-AGI scoring exactly?
-
-**Proposed:** Match ARC-AGI scoring (see CLAUDE.md):
+### 4. Verification Scoring (DECIDED)
+**Match ARC-AGI scoring (see CLAUDE.md):**
 - Task score = 1.0 if ANY attempt correct, 0.0 otherwise
 - Overall score = (solved tasks) / (total tasks)
+- Per-attempt tracking for detailed feedback
 
 ## Integration with Existing Webapp
 
@@ -253,15 +252,43 @@ shared/
 └── types.ts                         # MODIFY - Add ReARC types
 ```
 
-## Open Questions
+## Decisions (User Approved)
 
-1. **Dataset size:** How many tasks should a default dataset have? (Suggest: 10)
-2. **Re-ARC parameters:** What generation params should be exposed to users?
-3. **Caching:** Should we cache generated datasets temporarily? (Probably no, given stateless design)
-4. **Rate limiting:** Should we limit generation requests? (Depends on compute cost)
-5. **Grid visualization:** Reuse existing ARC grid rendering, or build custom for re-arc?
-6. **Download format:** Just JSON, or also support other formats?
-7. **Reverse engineering prevention:** Should we add salt/HMAC to prevent seed guessing?
+1. **Dataset size:** 400 tasks (matching ARC-AGI training set)
+2. **Task ID format:** 8-char hex strings (e.g., `a1b2c3d4`) - same as ARC-AGI
+3. **Train/test distribution:** Match ARC-AGI statistics:
+   - Train examples: 2-5 per task (avg ~3)
+   - Test examples: 1 per task
+4. **Re-ARC parameters to expose:**
+   - `diff_lb` (difficulty lower bound: 0-1)
+   - `diff_ub` (difficulty upper bound: 0-1)
+   - Generate ~10 examples per task, then randomly split into train/test
+5. **Security:** None - plain XOR is fine for this use case
+6. **Navigation:** Add to "Misc" dropdown menu (niche community tool)
+
+## Re-ARC Integration Details
+
+**Python API:**
+```python
+from main import generate_dataset
+
+generate_dataset(
+    path='output_dir',
+    seed=123456789,      # Derived from XOR of task IDs
+    n_examples=10,       # Generate 10 examples per task
+    diff_lb=0.0,         # Difficulty lower bound
+    diff_ub=1.0          # Difficulty upper bound
+)
+```
+
+**Our approach:**
+1. Generate 400 task IDs (8-char hex)
+2. XOR them together → seed
+3. Call re-arc `generate_dataset(seed=seed, n_examples=10, diff_lb=X, diff_ub=Y)`
+4. For each task, randomly split generated examples:
+   - Select 2-5 for training (weighted toward 3)
+   - Select 1 for test
+5. Format as ARC-AGI structure: `{"train": [...], "test": [...]}`
 
 ## Security Considerations
 
