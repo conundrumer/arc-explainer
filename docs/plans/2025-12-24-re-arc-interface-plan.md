@@ -35,6 +35,19 @@ type Submission = {
     attempt_2: number[][];
   }[];
 };
+
+// Metadata for complexity ranking (cached)
+type TaskMetadata = {
+  taskId: string;           // Original ARC-AGI task ID (e.g., "007bbfb7")
+  numTrain: number;         // Number of training examples
+  numTest: number;          // Number of test examples
+  verifierLOC: number;      // Lines of code in re-arc verifier (complexity proxy)
+};
+
+type MetadataCache = {
+  version: string;          // Re-arc version used
+  tasks: TaskMetadata[];    // All 400 tasks, sorted by LOC descending
+};
 ```
 
 ## Architecture
@@ -122,10 +135,20 @@ function seedToTaskIds(seed: number, count: number): string[];
 ### Phase 1: Setup & Install
 - [x] Review re-arc library documentation (https://github.com/michaelhodel/re-arc)
 - [x] Understand generation parameters and API
-- [x] Get user approval on key decisions (APPROVED: 400 tasks, 8-char hex IDs, diff_lb/diff_ub params)
-- [ ] Install re-arc library (`pip install` or clone repo)
+- [x] Get user approval on key decisions (APPROVED: variable tasks 1-400, complexity filtering, LOC ranking)
+- [ ] Install re-arc library (clone from GitHub)
+- [ ] Understand how to extract verifier LOC from re-arc codebase
 - [ ] Test re-arc generation with sample seed
 - [ ] Verify XOR seed approach produces deterministic results
+
+### Phase 1.5: Metadata Pre-processing
+- [ ] Create script to extract metadata from all 400 ARC tasks
+- [ ] For each task in `data/training/`:
+  - [ ] Count train/test examples
+  - [ ] Extract verifier function from re-arc `verifiers.py`
+  - [ ] Count lines of code in verifier function
+- [ ] Generate `arc_task_metadata.json` with complexity rankings
+- [ ] Cache this file (one-time generation, version control it)
 
 ### Phase 2: Core Infrastructure
 - [ ] Create type definitions in `shared/types.ts`
@@ -281,17 +304,24 @@ shared/
 
 ## Decisions (User Approved)
 
-1. **Dataset size:** 400 tasks (matching ARC-AGI training set)
+1. **Dataset size:** Variable (1-400 tasks), user-selectable
+   - Default: 400 tasks (full ARC-AGI training set)
+   - Filter by complexity: select top N hardest tasks
 2. **Task ID format:** 8-char hex strings (e.g., `a1b2c3d4`) - same as ARC-AGI
-3. **Train/test distribution:** Match ARC-AGI statistics:
-   - Train examples: 2-5 per task (avg ~3)
+3. **Train/test distribution:** Match exact counts from original ARC-AGI tasks
+   - Train examples: 2-5 per task (varies by task)
    - Test examples: 1 per task
-4. **Re-ARC parameters to expose:**
+4. **Complexity ranking:**
+   - Use re-arc verifier LOC (lines of code) as complexity proxy
+   - Pre-generation pass: analyze all 400 tasks, get train/test counts + LOC
+   - Sort by LOC descending (highest = most complex)
+   - Select top N tasks for generation
+5. **Re-ARC parameters to expose:**
+   - `n_tasks` (number of tasks: 1-400)
    - `diff_lb` (difficulty lower bound: 0-1)
    - `diff_ub` (difficulty upper bound: 0-1)
-   - Generate ~10 examples per task, then randomly split into train/test
-5. **Security:** None - plain XOR is fine for this use case
-6. **Navigation:** Add to "Misc" dropdown menu (niche community tool)
+6. **Security:** None - plain XOR is fine for this use case
+7. **Navigation:** Add to "Misc" dropdown menu (niche community tool)
 
 ## Re-ARC Integration Details
 
@@ -309,25 +339,42 @@ generate_dataset(
 ```
 
 **Our approach (FINAL):**
-1. User provides initial seed (or we generate one random seed)
-2. PRNG generates **399** random task IDs (8-char hex)
-3. Compute **400th ID** = `id[0] ^ id[1] ^ ... ^ id[398] ^ seed`
-4. Sort original ARC-AGI task IDs alphabetically (007bbfb7, ..., ff805c23)
-5. Create 1-to-1 mapping: `generated_ids[i] ↔ sorted_original[i]`
+
+**Pre-generation pass (one-time setup or cached):**
+1. For each of 400 original ARC-AGI tasks:
+   - Read `data/training/{task_id}.json`
+   - Count train examples (e.g., 5)
+   - Count test examples (e.g., 1)
+   - Get verifier LOC from re-arc (lines of code = complexity proxy)
+2. Store metadata: `{task_id, num_train, num_test, loc}`
+3. Sort by LOC descending (highest complexity first)
+
+**Generation:**
+1. User selects:
+   - `n_tasks` (e.g., 100) - how many tasks to generate
+   - `seed` (or we generate random)
+   - `diff_lb`, `diff_ub` (difficulty bounds)
+2. Select top `n_tasks` from sorted metadata (most complex)
+3. PRNG generates **(n_tasks - 1)** random task IDs (8-char hex)
+4. Compute **nth ID** = `id[0] ^ id[1] ^ ... ^ id[n-2] ^ seed` (XOR trick)
+5. Create 1-to-1 mapping: `generated_ids[i] ↔ selected_tasks[i]`
 6. For each mapping:
-   - Read original task structure (e.g., `007bbfb7.json`: 5 train, 1 test)
-   - Use re-arc generator for that specific task
-   - Generate same number of train/test examples using re-arc
+   - Use re-arc generator for that specific original task
+   - Generate exact `num_train` + `num_test` examples
    - Assign to the generated task ID
 7. Output: `{[generated_id]: {train: [...re-arc variations...], test: [...]}, ...}`
 
 **Verification approach:**
-1. Extract all 400 task IDs from submission
-2. XOR all 400 IDs together → recovers original seed (XOR trick!)
-3. Regenerate 400 IDs using that seed (deterministic PRNG + XOR)
-4. Recreate the 1-to-1 mapping with sorted original tasks
-5. Regenerate dataset using re-arc with the same seed (deterministic)
-6. Verify submission attempts against regenerated ground truth
+1. Extract all task IDs from submission (count = `n_tasks`)
+2. XOR all task IDs together → recovers original seed (XOR trick!)
+3. Regenerate `n_tasks` IDs using that seed (deterministic PRNG + XOR)
+4. Select top `n_tasks` from complexity-sorted metadata
+5. Recreate the 1-to-1 mapping: `generated_ids[i] ↔ selected_tasks[i]`
+6. Regenerate dataset using re-arc with the same seed (deterministic)
+7. Verify submission attempts against regenerated ground truth
+8. Score = solved_tasks / n_tasks
+
+**Note:** The number of tasks is self-evident from the submission (just count the keys). The XOR technique works for any `n`, not just 400.
 
 ## Security Considerations
 
