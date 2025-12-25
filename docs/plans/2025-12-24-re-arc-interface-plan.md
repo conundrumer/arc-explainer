@@ -1,13 +1,13 @@
-# Re-ARC Dataset Generation & Verification Interface
+# RE-ARC Dataset Generation & Verification Interface
 
 **Author:** Claude Code using Sonnet 4.5
 **Date:** 2025-12-24
-**Purpose:** Plan for implementing a stateless re-arc dataset generation and verification interface
+**Purpose:** Plan for implementing a stateless RE-ARC dataset generation and verification interface
 
 ## Overview
 
 Create a web interface that allows users to:
-1. Generate re-arc datasets on demand
+1. Generate RE-ARC datasets on demand
 2. Submit solutions for verification
 3. Verification works via XOR of task IDs to regenerate the seed (stateless, no DB needed)
 
@@ -125,12 +125,17 @@ Design and implement UI once backend is working
 
 **Seed recovery:** `XOR(all_task_ids) = seed`
 
-**Steganographic timestamp encoding:**
-- Message format: [version: 1 byte = 0] + [generation_timestamp: Unix seconds, big-endian]
-- XOR message bytes into lower 16 bits of sorted task IDs
+**Steganographic message encoding:**
+- XOR arbitrary message bytes into lower 16 bits of sorted task IDs
 - Decode by regenerating PRNG sequence and XOR'ing back
 - Looks like random noise without seed
-- Max message: `(n_tasks - 1) * 2` bytes (supports timestamp + version with room to spare)
+- Max message: `(n_tasks - 1) * 2` bytes
+
+**Current encoded message format:**
+- Version: 1 byte (value = 0)
+- Generation timestamp: 4 bytes (Unix seconds, big-endian)
+- Total: 5 bytes
+- (Format may change in future versions)
 
 ### Task Mapping
 - Sort original ARC tasks by complexity (LOC descending)

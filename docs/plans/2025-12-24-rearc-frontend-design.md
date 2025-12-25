@@ -1,4 +1,4 @@
-# Re-ARC Eval Frontend Design
+# RE-ARC Eval Frontend Design
 
 **Author:** Claude Code using Sonnet 4.5
 **Date:** 2025-12-25
@@ -15,7 +15,7 @@
 
 ## Section 1: Header
 
-**Title:** Re-ARC Eval
+**Title:** RE-ARC Eval
 
 **Subtitle:** Generate and verify ARC puzzle datasets
 
