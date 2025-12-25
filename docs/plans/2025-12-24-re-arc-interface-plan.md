@@ -44,12 +44,13 @@ type ReArcMetadata = {
 ## High-Level Approach
 
 ### Generation Flow
-1. User selects parameters: n_tasks (1-400), diff_lb, diff_ub, optional seed
-2. Backend selects top n_tasks by complexity from metadata cache
-3. Generate (n_tasks - 1) random IDs from seed, compute nth ID via XOR
-4. Map generated IDs to selected original tasks 1-to-1
-5. Call re-arc to generate examples for each task (matching train/test counts)
-6. Return dataset JSON for download
+1. User requests dataset generation (minimal API, no parameters)
+2. Backend uses preset: n_tasks=400, diff_lb/diff_ub from config
+3. Generate task IDs from random seed, compute last ID via XOR
+4. Select top n_tasks by complexity from metadata cache
+5. Map generated IDs to selected original tasks 1-to-1
+6. Call re-arc to generate examples for each task (matching train/test counts)
+7. Return dataset JSON for download
 
 ### Verification Flow
 1. User uploads submission JSON
@@ -67,7 +68,7 @@ type ReArcMetadata = {
 - reArcService: orchestrate Python re-arc calls
 - reArcSeed utils: XOR logic and message encoding/decoding
 - Python scripts: wrap re-arc library
-- rearc_complexity_rankings.json: cached metadata (version controlled)
+- rearc_metadata.json: cached metadata (version controlled)
 
 **Frontend (Later):**
 - TBD - design after backend works
@@ -98,21 +99,22 @@ type ReArcMetadata = {
   - [ ] Count train/test examples
   - [ ] Extract verifier function from re-arc `verifiers.py`
   - [ ] Count lines of code in verifier function
-- [ ] Generate `data/rearc_complexity_rankings.json`
+- [ ] Generate `data/rearc_metadata.json`
 - [ ] Version control this file
 
 ### Phase 2: Core Infrastructure
 - [ ] Create type definitions in `shared/types.ts`
 - [ ] Implement XOR seed logic in `server/utils/reArcSeed.ts`
+- [ ] Write tests for XOR seed logic (`tests/reArcSeed.test.ts`)
 - [ ] Create Python wrapper scripts for re-arc library
 - [ ] Implement `reArcService.ts` with generation and verification methods
-- [ ] Test Python integration with simple script
+- [ ] Write integration tests (`tests/reArcService.test.ts`)
 
 ### Phase 3: Backend API
 - [ ] Create `reArcController.ts` with generation endpoint
 - [ ] Create verification endpoint
 - [ ] Add routes to `server/routes.ts` (follow existing pattern)
-- [ ] Test with curl/Postman
+- [ ] Write endpoint tests (`tests/reArcController.test.ts`)
 - [ ] Add error handling and validation
 
 ### Phase 4: Frontend (DEFERRED)
@@ -158,7 +160,15 @@ server/
 
 **Data:**
 ```
-data/rearc_complexity_rankings.json
+data/rearc_metadata.json
+```
+
+**Tests:**
+```
+tests/
+├── reArcSeed.test.ts          # XOR logic, message encoding
+├── reArcService.test.ts       # Python integration, generation
+└── reArcController.test.ts    # API endpoints
 ```
 
 **Types:**
@@ -166,17 +176,18 @@ data/rearc_complexity_rankings.json
 shared/types.ts (add ReARC types)
 ```
 
-## API Parameters
+## API (Minimal)
 
-**Generation endpoint:**
-- `n_tasks`: 1-400 (how many tasks)
-- `seed`: optional (for reproducibility)
-- `message`: optional raw bytes to encode in task IDs (max `(n_tasks-1)*2` bytes)
+**Generation endpoint:** `POST /api/rearc/generate`
+- No parameters (uses preset configuration)
+- Returns: `{ dataset: Dataset, seed: number, message?: string }`
 
-**Verification endpoint:**
-- `submission`: JSON object with task IDs and attempts
+**Verification endpoint:** `POST /api/rearc/verify`
+- Body: `{ submission: Submission }`
+- Returns: `{ score: number, message?: string }`
 
-**Internal (not exposed via API):**
-- `diff_lb`, `diff_ub`: re-arc difficulty bounds (hardcoded or config)
-- `rearc_complexity_rankings.json`: task metadata sorted by LOC
+**Internal configuration:**
+- `n_tasks`: 400 (hardcoded, all tasks)
+- `diff_lb`, `diff_ub`: from config file
+- `rearc_metadata.json`: task metadata sorted by LOC
 
