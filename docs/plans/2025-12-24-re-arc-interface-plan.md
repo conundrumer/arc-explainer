@@ -44,21 +44,17 @@ type ReArcMetadata = {
 ## High-Level Approach
 
 ### Generation Flow
-1. User requests dataset generation (minimal API, no parameters)
-2. Backend uses preset: n_tasks=400, diff_lb/diff_ub from config
-3. Generate task IDs from random seed, compute last ID via XOR
-4. Select top n_tasks by complexity from metadata cache
-5. Map generated IDs to selected original tasks 1-to-1
-6. Call re-arc to generate examples for each task (matching train/test counts)
-7. Return dataset JSON for download
+1. User requests dataset generation
+2. Backend generates dataset using internal configuration
+3. Return dataset JSON for download
 
 ### Verification Flow
 1. User uploads submission JSON
-2. Extract task IDs, XOR to recover seed
-3. Decode optional message from sorted task IDs (if present)
-4. Regenerate dataset deterministically using same seed and n_tasks
-5. Compare submission attempts to regenerated ground truth
-6. Score using ARC-AGI rules (ANY correct attempt = task solved)
+2. Validate submission structure
+3. Extract task IDs, XOR to recover seed
+4. Decode optional message from sorted task IDs (if present)
+5. Regenerate dataset deterministically
+6. Compare submission attempts to ground truth
 7. Return score + decoded message
 
 ### Components
@@ -141,8 +137,10 @@ Design and implement UI once backend is working
 - Map: `generated_ids[i] ↔ selected_original_tasks[i]`
 
 ### Scoring
-- Task solved if ANY of 2 attempts correct (ARC-AGI rules)
-- Overall score = solved_tasks / n_tasks
+- Each task worth 1.0 point total
+- Task score divided equally across its test pairs
+- Test pair solved if ANY of 2 attempts correct
+- Overall score = sum of all task scores
 
 ## Files to Create
 
@@ -179,15 +177,16 @@ shared/types.ts (add ReARC types)
 ## API (Minimal)
 
 **Generation endpoint:** `POST /api/rearc/generate`
-- No parameters (uses preset configuration)
-- Returns: `{ dataset: Dataset, seed: number, message?: string }`
+- No parameters
+- Returns: `Dataset` (plain JSON, no wrapper)
 
 **Verification endpoint:** `POST /api/rearc/verify`
 - Body: `{ submission: Submission }`
+- Validates submission structure before processing
 - Returns: `{ score: number, message?: string }`
 
-**Internal configuration:**
-- `n_tasks`: 400 (hardcoded, all tasks)
-- `diff_lb`, `diff_ub`: from config file
+**Internal configuration (from config file):**
+- `n_tasks`: number of tasks to generate
+- `diff_lb`, `diff_ub`: re-arc difficulty bounds
 - `rearc_metadata.json`: task metadata sorted by LOC
 
