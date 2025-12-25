@@ -137,10 +137,9 @@ Design and implement UI once backend is working
 - Map: `generated_ids[i] ↔ selected_original_tasks[i]`
 
 ### Scoring
-- Each task worth 1.0 point total
-- Task score divided equally across its test pairs
+- Each task worth 1.0 point, divided equally across its test pairs
 - Test pair solved if ANY of 2 attempts correct
-- Overall score = sum of all task scores
+- Overall score = (sum of task scores) / (total tasks)
 
 ## Files to Create
 
