@@ -87,7 +87,9 @@ Show expected JSON structure
 - Invalid JSON format
 - Missing required fields
 - Wrong structure
-- Grid format validation (dimensions, number arrays)
+- Grid format validation:
+  - Dimensions must be 1x1 to 30x30
+  - All cells must be integers
 
 **Server-side errors:**
 - Seed recovery failure: "Could not verify submission. Task IDs don't match or file is corrupted."

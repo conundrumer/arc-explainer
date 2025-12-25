@@ -63,7 +63,7 @@ type ReArcMetadata = {
 - reArcService: orchestrate Python re-arc calls
 - reArcSeed utils: XOR logic and message encoding/decoding
 - Python scripts: wrap re-arc library
-- rearc_metadata.json: cached metadata (version controlled)
+- rearc_metadata.json: cached metadata
 
 ## Backend Patterns (from existing codebase)
 
@@ -194,7 +194,10 @@ shared/types.ts (add ReArc types)
 
 **Verification endpoint:** `POST /api/rearc-eval/verify` (SSE stream)
 - Body: `{ submission: Submission }`
-- Client-side validation before upload (JSON format, structure, grid dimensions)
+- Client-side validation before upload:
+  - JSON format and structure
+  - Grid dimensions (min 1x1, max 30x30)
+  - Grid cells are integers
 - Returns Server-Sent Events:
   ```
   event: progress
