@@ -173,16 +173,41 @@ tests/
 shared/types.ts (add ReARC types)
 ```
 
-## API (Minimal)
+## API
 
-**Generation endpoint:** `POST /api/rearc/generate`
+**Generation endpoint:** `POST /api/svarc/generate` (SSE stream)
 - No parameters
-- Returns: `Dataset` (plain JSON, no wrapper)
+- Returns Server-Sent Events:
+  ```
+  event: progress
+  data: {"current": 47, "total": 400}
 
-**Verification endpoint:** `POST /api/rearc/verify`
+  event: complete
+  data: {<Dataset JSON>}
+
+  event: error
+  data: {"message": "Generation failed: ..."}
+  ```
+
+**Verification endpoint:** `POST /api/svarc/verify` (SSE stream)
 - Body: `{ submission: Submission }`
-- Validates submission structure before processing
-- Returns: `{ score: number, message?: string }`
+- Client-side validation before upload (JSON format, structure)
+- Returns Server-Sent Events:
+  ```
+  event: progress
+  data: {"current": 47, "total": 400, "stage": "regenerating"}
+
+  event: complete
+  data: {"score": 0.875, "solvedTasks": 350, "totalTasks": 400, "message": "..."}
+
+  event: error
+  data: {"message": "Seed recovery failed", "details": "..."}
+  ```
+
+**Error Handling:**
+- Generation: Python errors, re-arc failures
+- Verification: Seed recovery failure, grid format errors
+- All errors returned via SSE error event
 
 **Internal configuration (from config file):**
 - `n_tasks`: number of tasks to generate
