@@ -6,385 +6,258 @@
 
 ## Page: `/rearc`
 
-### Layout
-
-Single-page design with clear sections:
-1. **Header** - What is this?
-2. **How it Works** - Quick explanation
-3. **Generate Dataset** - Create challenge
-4. **Verify Solution** - Test your submission
+### Single-page design with 4 sections:
+1. Header - What is this?
+2. How it Works - Instructions
+3. Generate Dataset - Create challenge
+4. Verify Solution - Test submission
 
 ---
 
 ## Section 1: Header
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Re-ARC Challenge Verifier                         │
-│                                                     │
-│  Generate cryptographically-verified ARC datasets  │
-│  No account needed • No database • No trust        │
-└─────────────────────────────────────────────────────┘
-```
+**Title:** Re-ARC Challenge Verifier
 
-**Copy:**
-> **Re-ARC Challenge Verifier**
->
-> Generate cryptographically-verified ARC puzzle datasets and verify solutions without any centralized infrastructure. The dataset itself contains all the information needed for verification.
+**Subtitle:** Generate and verify ARC puzzle datasets
 
 ---
 
 ## Section 2: How It Works
 
-**Collapsible card** (shadcn/ui Collapsible)
+Collapsible section with steps:
 
-**Title:** "How does this work?"
+1. **Generate**: Click "Generate Dataset" to create unique ARC puzzles
+2. **Download**: Save the challenges file
+3. **Verify**: Upload your solutions to get your score
 
-**Content:**
-1. **Generate**: Click "Generate Dataset" to create 400 unique ARC puzzles
-2. **Download**: Save the `challenges.json` file
-3. **Solve**: Write code to solve the puzzles (2 attempts per test)
-4. **Format**: Create `submission.json` with your solutions
-5. **Verify**: Upload your submission to get your score
-
-**Key insight box:**
-> 🔐 **Cryptographic Verification**
->
-> The task IDs in the dataset encode a secret seed. When you submit solutions, we regenerate the exact same puzzles from that seed and verify your answers. No server-side storage needed.
+**Technical note (collapsible detail):**
+The task IDs encode a seed. Verification regenerates the same puzzles from that seed to check your solutions.
 
 ---
 
 ## Section 3: Generate Dataset
 
-**Card with prominent CTA**
+**Card with:**
+- Title: "Generate Challenge Dataset"
+- Description: "Creates unique ARC puzzles selected by difficulty"
+- Warning: "Each generation is unique. Save the file - you can't regenerate the same one!"
+- Button: "Generate Dataset"
 
-```typescript
-<Card>
-  <CardHeader>
-    <CardTitle>Generate Challenge Dataset</CardTitle>
-    <CardDescription>
-      Creates 400 unique ARC puzzles selected by difficulty
-    </CardDescription>
-  </CardHeader>
+**Generation states:**
+1. **Idle**: Show generate button
+2. **In Progress**:
+   - Hide button
+   - Show progress bar
+   - Display progress updates from API
+3. **Complete**:
+   - Show download button for challenges.json
+   - No other information displayed
 
-  <CardContent>
-    <div className="space-y-4">
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          Each generation creates a unique dataset. Save the file - you can't regenerate the same one!
-        </AlertDescription>
-      </Alert>
-
-      <Button
-        onClick={handleGenerate}
-        disabled={isGenerating}
-        size="lg"
-        className="w-full"
-      >
-        {isGenerating ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Generating...
-          </>
-        ) : (
-          <>
-            <Download className="mr-2 h-4 w-4" />
-            Generate Dataset
-          </>
-        )}
-      </Button>
-    </div>
-  </CardContent>
-
-  {generatedDataset && (
-    <CardFooter className="flex-col gap-2">
-      <div className="w-full p-4 bg-muted rounded-md">
-        <p className="text-sm font-mono">
-          Generated {Object.keys(generatedDataset).length} tasks
-        </p>
-        {decodedMessage && (
-          <p className="text-sm text-muted-foreground">
-            Message: {decodedMessage}
-          </p>
-        )}
-      </div>
-      <Button
-        onClick={handleDownload}
-        variant="outline"
-        className="w-full"
-      >
-        <FileDown className="mr-2 h-4 w-4" />
-        Download challenges.json
-      </Button>
-    </CardFooter>
-  )}
-</Card>
-```
+**API requirement:**
+- Generation endpoint must support progress reporting
+- Stream progress events during generation
 
 ---
 
 ## Section 4: Verify Solution
 
-**Card with drag-and-drop + file picker**
+**Card with:**
+- Title: "Verify Your Submission"
+- Description: "Upload your submission to check your score"
 
-```typescript
-<Card>
-  <CardHeader>
-    <CardTitle>Verify Your Submission</CardTitle>
-    <CardDescription>
-      Upload your submission.json to check your score
-    </CardDescription>
-  </CardHeader>
+**Submission format guide (collapsible):**
+Show expected JSON structure
 
-  <CardContent>
-    <div className="space-y-4">
-      {/* Submission Format Guide */}
-      <Collapsible>
-        <CollapsibleTrigger className="flex items-center gap-2 text-sm">
-          <ChevronRight className="h-4 w-4" />
-          Expected format for submission.json
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <pre className="mt-2 p-4 bg-muted rounded-md text-xs">
-{`{
-  "task_id_1": [
-    {
-      "attempt_1": [[0,1],[1,0]],
-      "attempt_2": [[1,0],[0,1]]
-    }
-  ],
-  "task_id_2": [ ... ]
-}`}
-          </pre>
-        </CollapsibleContent>
-      </Collapsible>
+**Upload interface:**
+- Drag-and-drop zone
+- "Drop submission.json here" text
+- File picker button as fallback
 
-      {/* Drag and Drop Zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        className={cn(
-          "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer",
-          "hover:border-primary/50 transition-colors",
-          isDragging && "border-primary bg-primary/5"
-        )}
-      >
-        <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-        <p className="text-sm font-medium mb-2">
-          Drop submission.json here
-        </p>
-        <p className="text-xs text-muted-foreground mb-4">
-          or click to browse
-        </p>
-        <input
-          type="file"
-          accept=".json"
-          onChange={handleFileSelect}
-          className="hidden"
-          ref={fileInputRef}
-        />
-        <Button
-          variant="outline"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          Choose File
-        </Button>
-      </div>
+**Verification states:**
+1. **Idle**: Show drop zone
+2. **Validating Structure**:
+   - Quick check of JSON format
+   - No progress bar (fast)
+   - Show specific structural errors if invalid
+3. **Regenerating Dataset**:
+   - Hide upload interface
+   - Show progress bar
+   - Display progress from API
+4. **Scoring**:
+   - Continue progress bar
+   - "Comparing solutions..."
+5. **Complete**:
+   - Display score (percentage)
+   - Display solved/total count
+   - If message decoded, show it
 
-      {/* Verification Results */}
-      {verificationResult && (
-        <div className="space-y-4">
-          <Separator />
+**API requirement:**
+- Verification endpoint must support progress reporting
+- Stream events for: validation → regeneration → scoring
 
-          <div className="p-6 bg-muted rounded-lg text-center">
-            <p className="text-sm text-muted-foreground mb-2">
-              Your Score
-            </p>
-            <p className="text-4xl font-bold">
-              {(verificationResult.score * 100).toFixed(1)}%
-            </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              {verificationResult.solvedTasks} / {verificationResult.totalTasks} tasks solved
-            </p>
-          </div>
+---
 
-          {verificationResult.message && (
-            <Alert>
-              <MessageSquare className="h-4 w-4" />
-              <AlertTitle>Decoded Message</AlertTitle>
-              <AlertDescription>
-                {verificationResult.message}
-              </AlertDescription>
-            </Alert>
-          )}
-        </div>
-      )}
-    </div>
-  </CardContent>
-</Card>
+## Progress Bar Implementation
+
+**Required for both generation and verification**
+
+Progress updates from API:
+- Generation: per-task completion (e.g., "Generating task 47/400")
+- Verification: stages (validating → regenerating → scoring)
+
+Progress bar shows:
+- Current percentage
+- Current stage description
+- No time estimates
+
+---
+
+## Error Handling
+
+**Generation errors:**
+- Display error message inline
+- Show "Try Again" button
+
+**Verification errors:**
+
+1. **Invalid JSON**
+   - "Invalid JSON format. Please check your file syntax."
+
+2. **Wrong structure**
+   - Be specific about what's wrong:
+     - "Missing required field: attempt_1"
+     - "Expected array of attempts, got object"
+     - "Task [task_id] has 3 attempts, expected 2"
+
+3. **Seed recovery failure**
+   - "Could not verify submission. This may mean:"
+     - "- Wrong dataset (task IDs don't match)"
+     - "- Corrupted submission file"
+     - "- Modified task IDs"
+
+4. **Grid format errors**
+   - "Invalid grid format for task [task_id], attempt [N]"
+   - "Expected 2D array of integers"
+
+All errors:
+- Display inline in the verify section
+- Keep upload interface visible
+- Allow immediate retry
+
+---
+
+## Layout Structure
+
+```
+Header
+  ↓
+How It Works (collapsible)
+  ↓
+Generate Dataset
+  - Generate button (or progress bar)
+  - Download button (when complete)
+  ↓
+Verify Solution
+  - Upload interface (or progress bar)
+  - Results (when complete)
 ```
 
 ---
 
-## Component Structure
+## Component Breakdown
 
-```typescript
-// client/src/pages/ReArcPage.tsx
-export default function ReArcPage() {
-  const [generatedDataset, setGeneratedDataset] = useState<Dataset | null>(null);
-  const [decodedMessage, setDecodedMessage] = useState<string | null>(null);
-  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
+**Needed components:**
+- Card containers (shadcn/ui)
+- Collapsible sections (shadcn/ui)
+- Progress bars (shadcn/ui)
+- File upload with drag-and-drop
+- Alert/error display (shadcn/ui)
 
-  const handleGenerate = async () => {
-    setIsGenerating(true);
-    try {
-      const response = await fetch('/api/rearc/generate', { method: 'POST' });
-      const dataset = await response.json();
-      setGeneratedDataset(dataset);
-      // Auto-download
-      downloadJSON(dataset, 'challenges.json');
-    } catch (error) {
-      toast.error('Generation failed');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+**NOT needed:**
+- Toast notifications
+- Navigation between states
+- Separate pages
+- Statistics display
+- Marketing copy
 
-  const handleVerify = async (file: File) => {
-    setIsVerifying(true);
-    try {
-      const submission = JSON.parse(await file.text());
-      const response = await fetch('/api/rearc/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submission })
-      });
-      const result = await response.json();
-      setVerificationResult(result);
-    } catch (error) {
-      toast.error('Verification failed');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
+---
 
-  return (
-    <PageLayout>
-      <div className="container max-w-4xl mx-auto py-8 space-y-8">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold">Re-ARC Challenge Verifier</h1>
-          <p className="text-muted-foreground">
-            Generate cryptographically-verified ARC datasets
-          </p>
-        </div>
+## API Requirements
 
-        {/* How It Works */}
-        <HowItWorksSection />
+### Generation Endpoint
 
-        {/* Generate */}
-        <GenerateSection
-          isGenerating={isGenerating}
-          generatedDataset={generatedDataset}
-          onGenerate={handleGenerate}
-          onDownload={handleDownload}
-        />
+**Request:** `POST /api/rearc/generate`
+- No body
 
-        {/* Verify */}
-        <VerifySection
-          isVerifying={isVerifying}
-          verificationResult={verificationResult}
-          onVerify={handleVerify}
-        />
-      </div>
-    </PageLayout>
-  );
-}
+**Response:** Server-Sent Events (SSE) stream
+```
+event: progress
+data: {"stage": "generating", "current": 47, "total": 400}
+
+event: progress
+data: {"stage": "generating", "current": 48, "total": 400}
+
+...
+
+event: complete
+data: {<Dataset JSON>}
+```
+
+### Verification Endpoint
+
+**Request:** `POST /api/rearc/verify`
+- Body: `{ submission: Submission }`
+
+**Response:** Server-Sent Events (SSE) stream
+```
+event: progress
+data: {"stage": "validating"}
+
+event: progress
+data: {"stage": "regenerating", "current": 47, "total": 400}
+
+event: progress
+data: {"stage": "scoring"}
+
+event: complete
+data: {"score": 0.875, "solvedTasks": 350, "totalTasks": 400, "message": "..."}
+```
+
+**Errors:**
+```
+event: error
+data: {"message": "Invalid JSON format. Please check your file syntax."}
 ```
 
 ---
 
-## Visual Flow
+## User Experience Flow
 
-```
-┌────────────────────────────────────────┐
-│  Re-ARC Challenge Verifier             │
-│  Generate cryptographic datasets       │
-└────────────────────────────────────────┘
-              ↓
-┌────────────────────────────────────────┐
-│  [?] How It Works (collapsible)        │
-│  1. Generate → 2. Solve → 3. Verify    │
-└────────────────────────────────────────┘
-              ↓
-┌────────────────────────────────────────┐
-│  Generate Challenge Dataset            │
-│  ┌──────────────────────────────────┐  │
-│  │ [Generate Dataset]               │  │
-│  └──────────────────────────────────┘  │
-│  ↓ (after generation)                  │
-│  [Download challenges.json]            │
-└────────────────────────────────────────┘
-              ↓
-┌────────────────────────────────────────┐
-│  Verify Your Submission                │
-│  ┌──────────────────────────────────┐  │
-│  │  Drop submission.json here       │  │
-│  │  [Choose File]                   │  │
-│  └──────────────────────────────────┘  │
-│  ↓ (after verification)                │
-│  ┌──────────────────────────────────┐  │
-│  │  Score: 87.5%                    │  │
-│  │  350/400 tasks solved            │  │
-│  └──────────────────────────────────┘  │
-└────────────────────────────────────────┘
-```
+**Happy path:**
+1. User arrives at page
+2. Clicks "Generate Dataset"
+3. Watches progress bar fill
+4. Downloads challenges.json
+5. (Solves puzzles offline)
+6. Returns to page
+7. Drags submission.json onto upload zone
+8. Watches progress through validation → regeneration → scoring
+9. Sees final score
+
+**Error path:**
+1. User uploads invalid submission
+2. Sees specific error about structure
+3. Fixes submission
+4. Uploads again immediately
+5. Success
 
 ---
 
-## Key UX Principles
+## Open Questions
 
-1. **No assumptions**: Explain everything inline
-2. **Progressive disclosure**: Collapsible sections for details
-3. **Immediate feedback**: Show results inline, no navigation
-4. **Error handling**: Clear error messages with recovery steps
-5. **Responsive**: Works on mobile (drag-and-drop falls back to file picker)
+1. Should we show task count anywhere? (Currently removed all numbers)
+2. Generation time estimate to show user?
+3. Maximum file size for submissions?
+4. Should decode message be prominent or subtle?
+5. Download filename: `challenges.json` or include timestamp?
 
----
-
-## States to Handle
-
-**Generation:**
-- Idle (show button)
-- Generating (spinner + disabled)
-- Success (show download + stats)
-- Error (toast + retry button)
-
-**Verification:**
-- Idle (show drop zone)
-- Uploading (progress indicator)
-- Validating (spinner)
-- Success (show score)
-- Error (show validation errors)
-
----
-
-## Copy for Common Errors
-
-**Invalid submission format:**
-> ❌ Invalid submission format
->
-> Expected JSON object with task IDs as keys. See the format guide above.
-
-**Missing task IDs:**
-> ❌ Submission contains unknown task IDs
->
-> Make sure you're submitting solutions for the dataset you downloaded.
-
-**Wrong attempt count:**
-> ❌ Each task must have exactly 2 attempts
->
-> Format: `{ "attempt_1": [[...]], "attempt_2": [[...]] }`
