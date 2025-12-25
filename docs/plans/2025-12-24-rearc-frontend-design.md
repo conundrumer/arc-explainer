@@ -1,10 +1,10 @@
-# Self-Verifying ARC Frontend Design
+# Re-ARC Eval Frontend Design
 
 **Author:** Claude Code using Sonnet 4.5
 **Date:** 2025-12-25
 **Purpose:** Self-service page for generating and verifying cryptographic ARC datasets
 
-## Page: `/svarc` (placeholder - needs final name)
+## Page: `/rearc-eval`
 
 ### Single-page design with 3 sections:
 1. Header
@@ -15,7 +15,7 @@
 
 ## Section 1: Header
 
-**Title:** Self-Verifying ARC Challenge
+**Title:** Re-ARC Eval
 
 **Subtitle:** Generate and verify ARC puzzle datasets
 
@@ -59,10 +59,8 @@ Show expected JSON structure
 2. **Verifying**:
    - Hide upload interface
    - Show progress bar with current progress
-   - Display stage: "Regenerating and scoring..."
 3. **Complete**:
    - Display score (percentage)
-   - Display solved/total count
    - If message decoded, show it
    - Return to idle (allow retry)
 
@@ -71,8 +69,8 @@ Show expected JSON structure
 ## Progress Bars
 
 **Both generation and verification:**
-- Show current percentage
-- Show current task being processed
+- Show current percentage (X% or X/total format)
+- No task details
 - No time estimates
 
 ---
@@ -89,10 +87,11 @@ Show expected JSON structure
 - Invalid JSON format
 - Missing required fields
 - Wrong structure
+- Grid format validation (dimensions, number arrays)
 
 **Server-side errors:**
 - Seed recovery failure: "Could not verify submission. Task IDs don't match or file is corrupted."
-- Grid format errors: "Invalid grid format in task [id], attempt [N]"
+- Other failures: "Verification failed. Please check your submission and try again."
 
 All errors display inline, keep interface visible for retry.
 
@@ -133,7 +132,7 @@ Verify Solution
 4. (Solves puzzles offline)
 5. Returns to page
 6. Drags submission.json onto upload zone
-7. Watches progress bar (regenerate & score)
+7. Watches progress bar
 8. Sees final score
 
 **Error path:**

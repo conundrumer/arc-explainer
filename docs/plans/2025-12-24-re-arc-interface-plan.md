@@ -175,7 +175,7 @@ shared/types.ts (add ReARC types)
 
 ## API
 
-**Generation endpoint:** `POST /api/svarc/generate` (SSE stream)
+**Generation endpoint:** `POST /api/rearc-eval/generate` (SSE stream)
 - No parameters
 - Returns Server-Sent Events:
   ```
@@ -189,25 +189,25 @@ shared/types.ts (add ReARC types)
   data: {"message": "Generation failed: ..."}
   ```
 
-**Verification endpoint:** `POST /api/svarc/verify` (SSE stream)
+**Verification endpoint:** `POST /api/rearc-eval/verify` (SSE stream)
 - Body: `{ submission: Submission }`
-- Client-side validation before upload (JSON format, structure)
+- Client-side validation before upload (JSON format, structure, grid dimensions)
 - Returns Server-Sent Events:
   ```
   event: progress
-  data: {"current": 47, "total": 400, "stage": "regenerating"}
+  data: {"current": 47, "total": 400}
 
   event: complete
-  data: {"score": 0.875, "solvedTasks": 350, "totalTasks": 400, "message": "..."}
+  data: {"score": 0.875, "message": "..."}
 
   event: error
-  data: {"message": "Seed recovery failed", "details": "..."}
+  data: {"message": "Verification failed"}
   ```
 
 **Error Handling:**
-- Generation: Python errors, re-arc failures
-- Verification: Seed recovery failure, grid format errors
-- All errors returned via SSE error event
+- Generic 500 errors for all failures (generation or verification)
+- No specific error details exposed to client
+- Grid validation handled entirely client-side
 
 **Internal configuration (from config file):**
 - `n_tasks`: number of tasks to generate
