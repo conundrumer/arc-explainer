@@ -52,10 +52,10 @@ type ReArcMetadata = {
 1. User uploads submission JSON
 2. Validate submission structure
 3. Extract task IDs, XOR to recover seed
-4. Decode optional message from sorted task IDs (if present)
+4. Decode generation timestamp from sorted task IDs
 5. Regenerate dataset deterministically
 6. Compare submission attempts to ground truth
-7. Return score + decoded message
+7. Return score + time elapsed (submission time - generation time)
 
 ### Components
 
@@ -125,11 +125,12 @@ Design and implement UI once backend is working
 
 **Seed recovery:** `XOR(all_task_ids) = seed`
 
-**Optional message encoding:**
-- XOR raw bytes into lower 16 bits of sorted IDs
+**Steganographic timestamp encoding:**
+- Message format: [version: 1 byte = 0] + [generation_timestamp: Unix seconds, big-endian]
+- XOR message bytes into lower 16 bits of sorted task IDs
 - Decode by regenerating PRNG sequence and XOR'ing back
 - Looks like random noise without seed
-- Max message: `(n_tasks - 1) * 2` bytes
+- Max message: `(n_tasks - 1) * 2` bytes (supports timestamp + version with room to spare)
 
 ### Task Mapping
 - Sort original ARC tasks by complexity (LOC descending)
@@ -198,7 +199,7 @@ shared/types.ts (add ReARC types)
   data: {"current": 47, "total": 400}
 
   event: complete
-  data: {"score": 0.875, "message": "..."}
+  data: {"score": 0.875, "timeElapsedSeconds": 3847}
 
   event: error
   data: {"message": "Verification failed"}

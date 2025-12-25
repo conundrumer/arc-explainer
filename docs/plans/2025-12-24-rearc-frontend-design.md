@@ -61,7 +61,7 @@ Show expected JSON structure
    - Show progress bar with current progress
 3. **Complete**:
    - Display score (percentage)
-   - If message decoded, show it
+   - Display time elapsed (e.g., "Completed in 1 hour 4 minutes")
    - Return to idle (allow retry)
 
 ---
