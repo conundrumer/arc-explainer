@@ -208,8 +208,8 @@ shared/types.ts (add ReArc types)
   ```
 
 **Error Handling:**
-- Generic 500 errors for all failures (generation or verification)
-- No specific error details exposed to client
+- Seed recovery failure: specific error message ("Could not verify submission. Task IDs don't match or file is corrupted.")
+- Other failures: generic 500 error ("Verification failed")
 - Grid validation handled entirely client-side
 
 **Internal configuration (from config file):**
