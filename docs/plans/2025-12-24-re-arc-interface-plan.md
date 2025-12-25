@@ -155,8 +155,8 @@ server/
 ├── controllers/reArcController.ts
 ├── services/reArc/
 │   ├── reArcService.ts
-│   ├── reArcGenerator.py
-│   └── reArcVerifier.py
+│   ├── rearc_generator.py
+│   └── rearc_verifier.py
 ├── utils/reArcSeed.ts
 └── routes.ts (add routes)
 ```
@@ -176,7 +176,7 @@ tests/
 
 **Types:**
 ```
-shared/types.ts (add ReARC types)
+shared/types.ts (add ReArc types)
 ```
 
 ## API
