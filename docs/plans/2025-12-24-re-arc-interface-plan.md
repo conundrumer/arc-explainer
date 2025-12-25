@@ -59,15 +59,20 @@ type ReArcMetadata = {
 
 ### Components
 
-**Backend (Priority):**
-- reArcController: /generate and /verify endpoints
+**Backend:**
+- reArcController: /generate and /verify endpoints (SSE streaming)
 - reArcService: orchestrate Python re-arc calls
 - reArcSeed utils: XOR logic and message encoding/decoding
 - Python scripts: wrap re-arc library
 - rearc_metadata.json: cached metadata (version controlled)
 
-**Frontend (Later):**
-- TBD - design after backend works
+**Frontend:**
+- /rearc-eval page with three sections: Header, Generate Dataset, Verify Solution
+- SSE client for progress streaming (generation and verification)
+- File download on generation complete
+- Drag-and-drop upload with client-side validation
+- Progress bars (opaque, Kaggle-style)
+- Score display with time elapsed
 
 ## Backend Patterns (from existing codebase)
 
@@ -113,8 +118,16 @@ type ReArcMetadata = {
 - [ ] Write endpoint tests (`tests/reArcController.test.ts`)
 - [ ] Add error handling and validation
 
-### Phase 4: Frontend (DEFERRED)
-Design and implement UI once backend is working
+### Phase 4: Frontend
+- [ ] Create /rearc-eval page component
+- [ ] Implement SSE client for streaming progress
+- [ ] Add generation section with auto-download
+- [ ] Add verification section with drag-and-drop upload
+- [ ] Implement client-side JSON/grid validation
+- [ ] Create progress bar components
+- [ ] Add score display with time elapsed formatting
+- [ ] Style with shadcn/ui components
+- [ ] Add error handling UI
 
 ## Key Technical Details
 
