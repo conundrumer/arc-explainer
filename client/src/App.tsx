@@ -55,8 +55,12 @@ import WormArenaStats from "@/pages/WormArenaStats";
 import WormArenaMatches from "@/pages/WormArenaMatches";
 import WormArenaModels from "@/pages/WormArenaModels";
 import WormArenaSkillAnalysis from "@/pages/WormArenaSkillAnalysis";
+import WormArenaDistributions from "@/pages/WormArenaDistributions";
 import WormArenaRules from "@/pages/WormArenaRules";
+import ReArc from "@/pages/ReArc";
 import Redirect from "@/components/Redirect";
+
+import ReArcErrorShowcase from "@/pages/dev/ReArcErrorShowcase";
 
 function Router() {
   return (
@@ -107,6 +111,8 @@ function Router() {
         <Route path="/arc3/playground" component={ARC3AgentPlayground} />
         <Route path="/arc3/games" component={Arc3GamesBrowser} />
         <Route path="/arc3/games/:gameId" component={Arc3GameSpoiler} />
+        {/* RE-ARC - self-service dataset generation and evaluation */}
+        <Route path="/re-arc" component={ReArc} />
         {/* SnakeBench = official upstream project at snakebench.com */}
         <Route path="/snakebench" component={SnakeBenchEmbed} />
         {/* Backwards compatibility redirect */}
@@ -119,10 +125,20 @@ function Router() {
         <Route path="/worm-arena/models" component={WormArenaModels} />
         <Route path="/worm-arena/stats" component={WormArenaStats} />
         <Route path="/worm-arena/skill-analysis" component={WormArenaSkillAnalysis} />
+        <Route path="/worm-arena/distributions" component={WormArenaDistributions} />
         <Route path="/worm-arena/rules" component={WormArenaRules} />
         <Route path="/puzzle/:taskId" component={PuzzleExaminer} />
         <Route path="/examine/:taskId" component={PuzzleExaminer} />
         <Route path="/task/:taskId" component={PuzzleAnalyst} />
+
+        {/* Dev-only routes for component showcases (excluded from production builds)
+            See docs/reference/frontend/DEV_ROUTES.md for pattern guide */}
+        {import.meta.env.DEV && (
+          <>
+            <Route path="/dev/re-arc/error-display" component={ReArcErrorShowcase} />
+          </>
+        )}
+
         <Route component={NotFound} />
       </Switch>
     </PageLayout>

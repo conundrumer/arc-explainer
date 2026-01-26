@@ -1,9 +1,10 @@
 /**
- * Author: Claude Code using Haiku 4.5
- * Date: 2025-12-19
+ * Author: Claude Code using Haiku 4.5 (updated by Cascade)
+ * Date: 2025-12-30
  * PURPOSE: Thin orchestrator facade for SnakeBench service.
  *          Delegates to specialized modules: MatchRunner, StreamingRunner, ReplayResolver, etc.
  *          Maintains backward compatibility (all 19 public methods with original signatures).
+ *          2025-12-30 update: Fixed relative imports, shared type resolution, and OpenRouter model typing.
  * SRP/DRY check: Pass — pure delegation, orchestration only. All implementation in focused modules.
  */
 
@@ -23,11 +24,12 @@ import type {
   SnakeBenchMatchSearchRow,
   WormArenaStreamStatus,
   WormArenaFrameEvent,
-} from '../shared/types.js';
-import { repositoryService } from './RepositoryService.ts';
+} from '../../shared/types.js';
+import { repositoryService } from '../repositories/RepositoryService.ts';
 import { snakeBenchIngestQueue } from './snakeBenchIngestQueue.ts';
 import { CURATED_WORM_ARENA_HALL_OF_FAME } from './snakeBenchHallOfFame.ts';
-import { logger } from './utils/logger.ts';
+import { logger } from '../utils/logger.ts';
+import { MODELS } from '../config/models.ts';
 
 // Import from new modules
 import { SnakeBenchMatchRunner } from './snakeBench/SnakeBenchMatchRunner.ts';
@@ -118,7 +120,7 @@ class SnakeBenchService {
 
     // Prefer database-backed summaries, but gracefully fall back to filesystem index
     try {
-      const { games, total } = await repositoryService.snakeBench.getRecentGames(safeLimit);
+      const { games, total } = await repositoryService.gameRead.getRecentGames(safeLimit);
       if (total > 0 && games.length > 0) {
         const replayable = filterReplayableGames(games);
         const available = await this.replayResolver.filterGamesWithAvailableReplays(replayable);
@@ -192,7 +194,7 @@ class SnakeBenchService {
   async searchMatches(
     query: SnakeBenchMatchSearchQuery
   ): Promise<{ rows: SnakeBenchMatchSearchRow[]; total: number }> {
-    return repositoryService.snakeBench.searchMatches(query);
+    return repositoryService.gameRead.searchMatches(query);
   }
 
   /**
@@ -213,7 +215,7 @@ class SnakeBenchService {
   ): Promise<SnakeBenchTrueSkillLeaderboardEntry[]> {
     const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 150)) : 150;
     const safeMinGames = Number.isFinite(minGames) ? Math.max(1, minGames) : 3;
-    return repositoryService.snakeBench.getTrueSkillLeaderboard(safeLimit, safeMinGames);
+    return repositoryService.leaderboard.getTrueSkillLeaderboard(safeLimit, safeMinGames);
   }
 
   /**
@@ -223,21 +225,21 @@ class SnakeBenchService {
     limit: number = 10,
     sortBy: 'gamesPlayed' | 'winRate' = 'gamesPlayed'
   ): Promise<Array<{ modelSlug: string; gamesPlayed: number; wins: number; losses: number; ties: number; winRate?: number }>> {
-    return repositoryService.snakeBench.getBasicLeaderboard(limit, sortBy);
+    return repositoryService.leaderboard.getBasicLeaderboard(limit, sortBy);
   }
 
   /**
    * Get ARC explainer stats.
    */
   async getArcExplainerStats(): Promise<SnakeBenchArcExplainerStats> {
-    return repositoryService.snakeBench.getArcExplainerStats();
+    return repositoryService.gameRead.getArcExplainerStats();
   }
 
   /**
    * Get model rating.
    */
   async getModelRating(modelSlug: string): Promise<SnakeBenchModelRating | null> {
-    return repositoryService.snakeBench.getModelRating(modelSlug);
+    return repositoryService.leaderboard.getModelRating(modelSlug);
   }
 
   /**
@@ -248,14 +250,14 @@ class SnakeBenchService {
     limit?: number
   ): Promise<SnakeBenchModelMatchHistoryEntry[]> {
     const safeLimit = limit != null && Number.isFinite(limit) ? Number(limit) : 50;
-    return repositoryService.snakeBench.getModelMatchHistory(modelSlug, safeLimit);
+    return repositoryService.gameRead.getModelMatchHistory(modelSlug, safeLimit);
   }
 
   /**
    * Get recent activity.
    */
   async getRecentActivity(days: number = 7): Promise<{ days: number; gamesPlayed: number; uniqueModels: number }> {
-    return repositoryService.snakeBench.getRecentActivity(days);
+    return repositoryService.gameRead.getRecentActivity(days);
   }
 
   /**
@@ -281,13 +283,13 @@ class SnakeBenchService {
 
     // Get the leaderboard and pairing history
     const leaderboard = await this.getTrueSkillLeaderboard(150, safeMinGames);
-    const pairingHistory = await repositoryService.snakeBench.getPairingHistory();
+    const pairingHistory = await repositoryService.leaderboard.getPairingHistory();
 
-    // Filter to only approved OpenRouter models
-    const approvedModels = new Set(
-      require('./config/models.ts').MODELS.filter((m: any) => m.provider === 'OpenRouter' && !m.premium).map(
-        (m: any) => m.apiModelName || m.key
-      )
+    // Filter to only approved OpenRouter models (explicitly type to keep Set<string>)
+    const approvedModels = new Set<string>(
+      MODELS.filter(
+        (model) => model.provider === 'OpenRouter' && !model.premium
+      ).map((model) => model.apiModelName || model.key)
     );
 
     return suggestMatchups(mode, safeLimit, safeMinGames, leaderboard, pairingHistory, approvedModels);
@@ -343,4 +345,4 @@ class SnakeBenchService {
 }
 
 export const snakeBenchService = new SnakeBenchService();
-export type { SnakeBenchRunMatchRequest, SnakeBenchRunMatchResult } from '../shared/types.js';
+export type { SnakeBenchRunMatchRequest, SnakeBenchRunMatchResult } from '../../shared/types.js';

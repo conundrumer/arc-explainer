@@ -1,9 +1,11 @@
 /**
- * Author: Codex (GPT-5)
- * Date: 2025-12-20
- * PURPOSE: Thin orchestrator facade for SnakeBench service with model insights report formatting
- *          and OpenAI summary generation for the Worm Arena model insights report.
- * SRP/DRY check: Pass - delegation, report formatting, and summary wiring only.
+ * Author: Cascade
+ * Date: 2025-12-29
+ * PURPOSE: Thin orchestrator facade for SnakeBench/Worm Arena.
+ *          Delegates match execution to specialized runners and report generation
+ *          to WormArenaReportService.
+ * 
+ * SRP/DRY check: Pass - facade only, no business logic or formatting.
  */
 
 import type {
@@ -29,12 +31,13 @@ import type {
 } from '../../shared/types.js';
 import { repositoryService } from '../repositories/RepositoryService.ts';
 import { logger } from '../utils/logger.ts';
-import { openAIClient } from './openai/client.js';
-import { normalizeResponse } from './openai/responseParser.js';
 
 // Import from new modules
 import { SnakeBenchMatchRunner } from './snakeBench/SnakeBenchMatchRunner.ts';
-import { SnakeBenchStreamingRunner } from './snakeBench/SnakeBenchStreamingRunner.ts';
+import {
+  SnakeBenchStreamingRunner,
+  type StreamingHandlers,
+} from './snakeBench/SnakeBenchStreamingRunner.ts';
 import { SnakeBenchReplayResolver } from './snakeBench/SnakeBenchReplayResolver.ts';
 import { snakeBenchPythonBridge } from './snakeBench/SnakeBenchPythonBridge.ts';
 import { PersistenceCoordinator } from './snakeBench/persistence/persistenceCoordinator.ts';
@@ -42,251 +45,31 @@ import { GameIndexManager } from './snakeBench/persistence/gameIndexManager.ts';
 import { getSnakeBenchAllowedModels } from './snakeBench/helpers/modelAllowlist.ts';
 import { filterReplayableGames, getWormArenaGreatestHitsFiltered } from './snakeBench/helpers/replayFilters.ts';
 import { suggestMatchups } from './snakeBench/helpers/matchupSuggestions.ts';
-import { MODELS } from '../config/models.ts';
+import {
+  wormArenaReportService,
+  INSIGHTS_SUMMARY_MODEL,
+} from './wormArena/WormArenaReportService.ts';
 import path from 'path';
 import fs from 'fs';
-
-// Use a direct OpenAI model for the LLM summary step.
-const INSIGHTS_SUMMARY_MODEL = 'gpt-5-nano-2025-08-07';
 
 // Normalize model slugs so ":free" suffixes do not split report data.
 const normalizeModelSlug = (modelSlug: string): string => modelSlug.trim().replace(/:free$/i, '');
 
-// Format a ratio as a percent string for report text.
-const formatPercent = (value: number): string => `${(value * 100).toFixed(1)}%`;
-
-// Format a number with a fallback when data is missing.
-const formatOptionalNumber = (value: number | null, digits: number): string =>
-  value == null || Number.isNaN(value) ? '-' : value.toFixed(digits);
-
-// Format a cost value for report text.
-const formatCost = (value: number | null): string =>
-  value == null || Number.isNaN(value) ? '-' : `$${value.toFixed(4)}`;
-
-// Convert snake death reason values into human-readable labels.
-const formatReasonLabel = (reason: string): string => reason.replace(/_/g, ' ').trim();
-
-// Build the prompt used to request a short LLM summary for the report.
-const buildInsightsSummaryPrompt = (
-  modelSlug: string,
-  summary: WormArenaModelInsightsSummary,
-  failureModes: WormArenaModelInsightsFailureMode[],
-  lossOpponents: WormArenaModelInsightsOpponent[],
-): string => {
-  const failureLines = failureModes.length
-    ? failureModes
-        .slice(0, 4)
-        .map(mode => `${formatReasonLabel(mode.reason)} (${formatPercent(mode.percentOfLosses)})`)
-        .join(', ')
-    : 'None';
-
-  const opponentLines = lossOpponents.length
-    ? lossOpponents
-        .slice(0, 4)
-        .map(opponent => `${opponent.opponentSlug} (${formatPercent(opponent.lossRate)})`)
-        .join(', ')
-    : 'None';
-
-  const avgRounds = formatOptionalNumber(summary.averageRounds, 1);
-  const avgScore = formatOptionalNumber(summary.averageScore, 2);
-  const costPerLoss = formatCost(summary.costPerLoss);
-  const lossCoverage = formatPercent(summary.lossDeathReasonCoverage);
-  const earlyLossRate = formatPercent(summary.earlyLossRate);
-
-  return [
-    'Write one short paragraph (max 80 words).',
-    'No bullets, no headings, no disclaimers.',
-    'Focus on why the model loses and one practical next step.',
-    `Model: ${modelSlug}`,
-    `Games: ${summary.gamesPlayed}, Wins: ${summary.wins}, Losses: ${summary.losses}, Win rate: ${formatPercent(summary.winRate)}`,
-    `Average rounds: ${avgRounds}, Average score: ${avgScore}, Cost per loss: ${costPerLoss}`,
-    `Early loss rate: ${earlyLossRate}, Loss reason coverage: ${lossCoverage}`,
-    `Top failure modes: ${failureLines}`,
-    `Tough opponents by loss rate: ${opponentLines}`,
-  ].join('\n');
-};
-
-// Extract the text summary from a Responses API payload with reasoning fallback.
-const extractInsightsSummaryText = (response: any): string | null => {
-  const normalized = normalizeResponse(response, { modelKey: INSIGHTS_SUMMARY_MODEL });
-  const text = typeof normalized.output_text === 'string' ? normalized.output_text.trim() : '';
-  if (text) {
-    return text.replace(/\s+/g, ' ').trim();
-  }
-
-  const reasoning = normalized.output_reasoning?.summary;
-  if (typeof reasoning === 'string' && reasoning.trim().length > 0) {
-    return reasoning.replace(/\s+/g, ' ').trim();
-  }
-
-  if (Array.isArray(reasoning)) {
-    const joined = reasoning
-      .map(item => (typeof item === 'string' ? item : ''))
-      .filter(Boolean)
-      .join(' ');
-    if (joined.trim().length > 0) {
-      return joined.replace(/\s+/g, ' ').trim();
-    }
-  }
-
-  if (reasoning && typeof reasoning === 'object' && typeof (reasoning as any).text === 'string') {
-    const summaryText = (reasoning as any).text.trim();
-    return summaryText.length > 0 ? summaryText.replace(/\s+/g, ' ').trim() : null;
-  }
-
-  return null;
-};
-
-// Call OpenAI directly to generate the model insights summary text.
-const requestInsightsSummary = async (
-  modelSlug: string,
-  summary: WormArenaModelInsightsSummary,
-  failureModes: WormArenaModelInsightsFailureMode[],
-  lossOpponents: WormArenaModelInsightsOpponent[],
-): Promise<string | null> => {
-  // Build a compact prompt from the aggregated stats for the LLM.
-  const prompt = buildInsightsSummaryPrompt(modelSlug, summary, failureModes, lossOpponents);
-
-  // Prepare a Responses API payload tailored for a short, single-paragraph summary.
-  // Use the simple input format that works with the OpenAI SDK
-  const requestBody = {
-    model: INSIGHTS_SUMMARY_MODEL,
-    input: [
-      {
-        id: `msg_${Date.now()}_summary_${Math.random().toString(16).slice(2)}`,
-        role: 'user',
-        type: 'message',
-        content: [
-          {
-            type: 'input_text',
-            text: prompt,
-          },
-        ],
-      },
-    ],
-    instructions: 'You are a concise analytics reporter for game model performance.',
-    reasoning: {
-      effort: 'medium',
-      summary: 'auto',
-    },
-    text: {
-      verbosity: 'high',
-    },
-    max_output_tokens: 600,
-  };
-
-  try {
-    // Execute the OpenAI request and extract the summary text from the response.
-    // Type assertion to bypass TypeScript checking since the runtime format is correct
-    const response = await openAIClient.responses.create(requestBody as any);
-    return extractInsightsSummaryText(response);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`SnakeBenchService.requestInsightsSummary failed: ${message}`, 'snakebench-service');
-    return null;
-  }
-};
-
-// Build the markdown version of the model insights report.
-const buildInsightsMarkdown = (
-  modelSlug: string,
-  generatedAt: string,
-  summary: WormArenaModelInsightsSummary,
-  failureModes: WormArenaModelInsightsFailureMode[],
-  lossOpponents: WormArenaModelInsightsOpponent[],
-  llmSummary: string | null,
-): string => {
-  const lines: string[] = [];
-  const knownLosses = Math.max(summary.losses - summary.unknownLosses, 0);
-
-  lines.push('# Worm Arena Model Insights');
-  lines.push(`Model: ${modelSlug}`);
-  lines.push(`Generated: ${generatedAt}`);
-  lines.push('');
-  // Include the LLM summary near the top for quick scanning.
-  lines.push('LLM Summary');
-  lines.push(llmSummary && llmSummary.trim().length > 0 ? llmSummary : 'Summary unavailable.');
-  lines.push('');
-  lines.push('Summary');
-  lines.push(`- Games played: ${summary.gamesPlayed}`);
-  lines.push(`- Win rate (decided): ${formatPercent(summary.winRate)}`);
-  lines.push(`- Total cost: ${formatCost(summary.totalCost)}`);
-  lines.push(`- Cost per game: ${formatCost(summary.costPerGame)}`);
-  lines.push(`- Cost per win: ${formatCost(summary.costPerWin)}`);
-  lines.push(`- Cost per loss: ${formatCost(summary.costPerLoss)}`);
-  lines.push(`- Average rounds: ${formatOptionalNumber(summary.averageRounds, 1)}`);
-  lines.push(`- Average score: ${formatOptionalNumber(summary.averageScore, 2)}`);
-  lines.push(`- Average loss round: ${formatOptionalNumber(summary.averageDeathRoundLoss, 1)}`);
-  lines.push(`- Early losses (round <= 5): ${summary.earlyLosses} (${formatPercent(summary.earlyLossRate)})`);
-  lines.push('');
-  lines.push('Failure modes (losses)');
-  if (failureModes.length === 0) {
-    lines.push('- No losses recorded.');
-  } else {
-    failureModes.forEach((mode) => {
-      const reasonLabel = formatReasonLabel(mode.reason);
-      const avgRound = formatOptionalNumber(mode.averageDeathRound, 1);
-      lines.push(
-        `- ${reasonLabel}: ${mode.losses} (${formatPercent(mode.percentOfLosses)}), avg round ${avgRound}`,
-      );
-    });
-  }
-  lines.push('');
-  lines.push('Tough opponents (by losses)');
-  if (lossOpponents.length === 0) {
-    lines.push('- No opponents recorded.');
-  } else {
-    lossOpponents.forEach((opponent) => {
-      const lastPlayed = opponent.lastPlayedAt ?? '-';
-      lines.push(
-        `- ${opponent.opponentSlug}: ${opponent.losses} losses out of ${opponent.gamesPlayed} games, last played ${lastPlayed}`,
-      );
-    });
-  }
-  lines.push('');
-  lines.push('Data quality');
-  lines.push(
-    `- Losses with death reason: ${formatPercent(summary.lossDeathReasonCoverage)} (${knownLosses} of ${summary.losses})`,
-  );
-  lines.push(`- Losses without death reason: ${summary.unknownLosses}`);
-
-  return lines.join('\n');
-};
-
-// Build a concise tweet for sharing the report.
-const buildInsightsTweet = (
-  modelSlug: string,
-  summary: WormArenaModelInsightsSummary,
-  failureModes: WormArenaModelInsightsFailureMode[],
-): string => {
-  const topFailure = failureModes[0];
-  const topReason = topFailure ? formatReasonLabel(topFailure.reason) : 'none';
-  const topReasonPct = topFailure ? formatPercent(topFailure.percentOfLosses) : '0.0%';
-  const avgRounds = summary.averageRounds != null ? summary.averageRounds.toFixed(0) : 'n/a';
-  const costPerLoss =
-    summary.costPerLoss != null ? `$${summary.costPerLoss.toFixed(4)}` : 'n/a';
-
-  const tweet = `Worm Arena insights for ${modelSlug}: win rate ${formatPercent(
-    summary.winRate,
-  )}, top loss ${topReason} (${topReasonPct}), avg rounds ${avgRounds}, cost per loss ${costPerLoss}. #WormArena`;
-
-  return tweet.length > 260 ? `${tweet.slice(0, 257)}...` : tweet;
-};
-
-export interface StreamingHandlers {
-  onStatus?: (status: WormArenaStreamStatus) => void;
-  onFrame?: (frame: WormArenaFrameEvent) => void;
-  onChunk?: (chunk: any) => void;
-  onComplete?: (result: SnakeBenchRunMatchResult) => void;
-  onError?: (err: Error) => void;
-}
-
+/**
+ * SnakeBenchService - Orchestrator for SnakeBench/Worm Arena operations.
+ * Delegates specialized tasks to runners and report services.
+ */
 class SnakeBenchService {
   private readonly matchRunner: SnakeBenchMatchRunner;
   private readonly streamingRunner: SnakeBenchStreamingRunner;
   private readonly replayResolver: SnakeBenchReplayResolver;
   private readonly persistenceCoordinator: PersistenceCoordinator;
   private readonly gameIndexManager: GameIndexManager;
+  /**
+   * Locate local MP4 assets for completed games.
+   * We do not attempt generation here—only presence checks to expose downloads.
+   */
+  private readonly videoDirectories: string[];
 
   constructor() {
     const backendDir = path.join(process.cwd(), 'external', 'SnakeBench', 'backend');
@@ -297,6 +80,26 @@ class SnakeBenchService {
     this.matchRunner = new SnakeBenchMatchRunner(this.persistenceCoordinator);
     this.streamingRunner = new SnakeBenchStreamingRunner(this.persistenceCoordinator);
     this.replayResolver = new SnakeBenchReplayResolver(backendDir);
+    this.videoDirectories = [
+      path.join(backendDir, 'completed_games_videos'),
+      path.join(backendDir, 'completed_games_videos_local'),
+    ];
+  }
+
+  /**
+   * Return local MP4 path if present (no generation). Normalizes snake_game_ prefix.
+   */
+  getLocalVideoPath(gameId: string): string | null {
+    if (!gameId) return null;
+    const normalized = gameId
+      .replace(/^snake_game_/i, '')
+      .replace(/\.mp4$/i, '')
+      .replace(/\.json$/i, '');
+    const candidates = this.videoDirectories.map((dir) =>
+      path.join(dir, `snake_game_${normalized}.mp4`),
+    );
+    const found = candidates.find((candidate) => fs.existsSync(candidate));
+    return found ?? null;
   }
 
   /**
@@ -349,7 +152,7 @@ class SnakeBenchService {
 
     // Prefer database-backed summaries, but gracefully fall back to filesystem index
     try {
-      const { games, total } = await repositoryService.snakeBench.getRecentGames(safeLimit);
+      const { games, total } = await repositoryService.gameRead.getRecentGames(safeLimit);
       if (total > 0 && games.length > 0) {
         const replayable = filterReplayableGames(games);
         const available = await this.replayResolver.filterGamesWithAvailableReplays(replayable);
@@ -357,7 +160,7 @@ class SnakeBenchService {
         // Get global total from stats (all matches ever, not just this batch)
         let globalTotal = total;
         try {
-          const stats = await repositoryService.snakeBench.getArcExplainerStats();
+          const stats = await repositoryService.gameRead.getArcExplainerStats();
           globalTotal = stats.totalGames;
         } catch {
           // Fall back to recent games total if stats fetch fails
@@ -435,7 +238,7 @@ class SnakeBenchService {
   async searchMatches(
     query: SnakeBenchMatchSearchQuery
   ): Promise<{ rows: SnakeBenchMatchSearchRow[]; total: number }> {
-    return repositoryService.snakeBench.searchMatches(query);
+    return repositoryService.gameRead.searchMatches(query);
   }
 
   /**
@@ -456,7 +259,7 @@ class SnakeBenchService {
   ): Promise<SnakeBenchTrueSkillLeaderboardEntry[]> {
     const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 150)) : 150;
     const safeMinGames = Number.isFinite(minGames) ? Math.max(1, minGames) : 3;
-    return repositoryService.snakeBench.getTrueSkillLeaderboard(safeLimit, safeMinGames);
+    return repositoryService.leaderboard.getTrueSkillLeaderboard(safeLimit, safeMinGames);
   }
 
   /**
@@ -466,21 +269,21 @@ class SnakeBenchService {
     limit: number = 10,
     sortBy: 'gamesPlayed' | 'winRate' = 'gamesPlayed'
   ): Promise<Array<{ modelSlug: string; gamesPlayed: number; wins: number; losses: number; ties: number; winRate?: number }>> {
-    return repositoryService.snakeBench.getBasicLeaderboard(limit, sortBy);
+    return repositoryService.leaderboard.getBasicLeaderboard(limit, sortBy);
   }
 
   /**
    * Get ARC explainer stats.
    */
   async getArcExplainerStats(): Promise<SnakeBenchArcExplainerStats> {
-    return repositoryService.snakeBench.getArcExplainerStats();
+    return repositoryService.gameRead.getArcExplainerStats();
   }
 
   /**
    * Get model rating.
    */
   async getModelRating(modelSlug: string): Promise<SnakeBenchModelRating | null> {
-    return repositoryService.snakeBench.getModelRating(modelSlug);
+    return repositoryService.leaderboard.getModelRating(modelSlug);
   }
 
   /**
@@ -491,7 +294,7 @@ class SnakeBenchService {
     limit?: number
   ): Promise<SnakeBenchModelMatchHistoryEntry[]> {
     const safeLimit = limit != null && Number.isFinite(limit) ? Number(limit) : 50;
-    return repositoryService.snakeBench.getModelMatchHistory(modelSlug, safeLimit);
+    return repositoryService.gameRead.getModelMatchHistory(modelSlug, safeLimit);
   }
 
   /**
@@ -499,55 +302,71 @@ class SnakeBenchService {
    * Used by the Model Match History page to show every game a model has ever played.
    */
   async getModelMatchHistoryUnbounded(modelSlug: string): Promise<SnakeBenchModelMatchHistoryEntry[]> {
-    return repositoryService.snakeBench.getModelMatchHistoryUnbounded(modelSlug);
+    return repositoryService.gameRead.getModelMatchHistoryUnbounded(modelSlug);
   }
 
   /**
    * Build the actionable insights report for a specific model.
+   * Delegates LLM summary generation and formatting to WormArenaReportService.
    */
   async getModelInsightsReport(modelSlug: string): Promise<WormArenaModelInsightsReport | null> {
-    // Normalize the slug before querying to keep report results consistent.
+    const normalizedSlug = normalizeModelSlug(modelSlug);
+    if (!normalizedSlug) return null;
+
+    const data = await repositoryService.analytics.getModelInsightsData(normalizedSlug);
+    if (!data) return null;
+
+    // Request the LLM summary paragraph
+    const llmSummary = await wormArenaReportService.requestInsightsSummary(
+      normalizedSlug,
+      data.summary,
+      data.failureModes,
+      data.lossOpponents,
+    );
+
+    return wormArenaReportService.buildReportObject(normalizedSlug, data, llmSummary);
+  }
+
+  /**
+   * Stream model insights report generation with live reasoning updates.
+   * Delegates to WormArenaReportService.
+   */
+  async streamModelInsightsReport(
+    modelSlug: string,
+    handlers: {
+      onStatus: (status: WormArenaStreamStatus) => void;
+      onChunk: (chunk: { type: string; delta?: string; content?: string; timestamp: number }) => void;
+    },
+    abortSignal: AbortSignal
+  ): Promise<WormArenaModelInsightsReport> {
     const normalizedSlug = normalizeModelSlug(modelSlug);
     if (!normalizedSlug) {
-      return null;
+      throw new Error('Invalid model slug');
     }
 
-    const data = await repositoryService.snakeBench.getModelInsightsData(normalizedSlug);
+    handlers.onStatus({
+      state: 'in_progress',
+      phase: 'fetching_data',
+      message: 'Loading model statistics...'
+    });
+
+    const data = await repositoryService.analytics.getModelInsightsData(normalizedSlug);
     if (!data) {
-      return null;
+      throw new Error('No data available for this model');
     }
 
-    const generatedAt = new Date().toISOString();
-    // Request the LLM summary, but do not fail the report if it is unavailable.
-    const llmSummary = await requestInsightsSummary(
-      normalizedSlug,
-      data.summary,
-      data.failureModes,
-      data.lossOpponents,
-    );
-    const markdownReport = buildInsightsMarkdown(
-      normalizedSlug,
-      generatedAt,
-      data.summary,
-      data.failureModes,
-      data.lossOpponents,
-      llmSummary,
-    );
-    const tweetText = buildInsightsTweet(normalizedSlug, data.summary, data.failureModes);
+    handlers.onStatus({
+      state: 'in_progress',
+      phase: 'generating_insights',
+      message: 'Analyzing model performance...'
+    });
 
-    return {
-      modelSlug: normalizedSlug,
-      generatedAt,
-      summary: data.summary,
-      failureModes: data.failureModes,
-      lossOpponents: data.lossOpponents,
-      // LLM summary paragraph when available.
-      llmSummary,
-      // Model used for the LLM summary when available.
-      llmModel: llmSummary ? INSIGHTS_SUMMARY_MODEL : null,
-      markdownReport,
-      tweetText,
-    };
+    return wormArenaReportService.streamModelInsightsReport(
+      normalizedSlug,
+      data,
+      handlers,
+      abortSignal
+    );
   }
 
   /**
@@ -564,14 +383,14 @@ class SnakeBenchService {
       winRate?: number;
     }>
   > {
-    return repositoryService.snakeBench.getModelsWithGames();
+    return repositoryService.gameRead.getModelsWithGames();
   }
 
   /**
    * Get recent activity.
    */
   async getRecentActivity(days: number = 7): Promise<{ days: number; gamesPlayed: number; uniqueModels: number }> {
-    return repositoryService.snakeBench.getRecentActivity(days);
+    return repositoryService.gameRead.getRecentActivity(days);
   }
 
   /**
@@ -597,14 +416,11 @@ class SnakeBenchService {
 
     // Get the leaderboard and pairing history
     const leaderboard = await this.getTrueSkillLeaderboard(150, safeMinGames);
-    const pairingHistory = await repositoryService.snakeBench.getPairingHistory();
+    const pairingHistory = await repositoryService.leaderboard.getPairingHistory();
 
-    // Filter to only approved OpenRouter models
-    const approvedModels = new Set(
-      MODELS
-        .filter((m: any) => m.provider === 'OpenRouter' && !m.premium)
-        .map((m: any) => (m.apiModelName || m.key) as string)
-    );
+    // Use all leaderboard models (already filtered by minGames and ranked by TrueSkill).
+    // No additional filtering needed - we want suggestions for any models that have played.
+    const approvedModels = new Set(leaderboard.map(e => e.modelSlug));
 
     return suggestMatchups(mode, safeLimit, safeMinGames, leaderboard, pairingHistory, approvedModels as Set<string>);
   }
@@ -655,6 +471,14 @@ class SnakeBenchService {
       message,
       timestamp: Date.now(),
     };
+  }
+
+  /**
+   * Get run length distribution for models with minimum games threshold.
+   * Delegates to repository method.
+   */
+  async getRunLengthDistribution(minGames: number = 5) {
+    return repositoryService.analytics.getRunLengthDistribution(minGames);
   }
 }
 

@@ -32,6 +32,9 @@ import {
   getGameById,
   type Arc3GameMetadata,
   type DifficultyRating,
+  type ActionMapping,
+  type LevelScreenshot,
+  type GameResource,
 } from '../../../shared/arc3Games';
 
 /**
@@ -195,7 +198,7 @@ export default function Arc3GameSpoiler() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {game.actionMappings.map(mapping => (
+                {game.actionMappings.map((mapping: ActionMapping) => (
                   <div
                     key={mapping.action}
                     className="flex items-start gap-3 p-3 bg-muted rounded-lg"
@@ -233,8 +236,8 @@ export default function Arc3GameSpoiler() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {game.levelScreenshots
-                  .sort((a, b) => a.level - b.level)
-                  .map(screenshot => (
+                  .sort((a: LevelScreenshot, b: LevelScreenshot) => a.level - b.level)
+                  .map((screenshot: LevelScreenshot) => (
                     <div key={screenshot.level} className="border rounded-lg overflow-hidden bg-muted">
                       <div className="p-3 bg-muted/80 border-b">
                         <p className="font-semibold text-sm">
@@ -264,6 +267,52 @@ export default function Arc3GameSpoiler() {
           </Card>
         )}
 
+        {/* Replays */}
+        {game.resources.filter((r: GameResource) => r.type === 'replay').length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gamepad2 className="h-5 w-5" />
+                Notable Playthroughs
+              </CardTitle>
+              <CardDescription>
+                Watch expert players complete this game
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {game.resources
+                  .filter((r: GameResource) => r.type === 'replay')
+                  .map((replay: GameResource, idx: number) => (
+                    <a
+                      key={idx}
+                      href={replay.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4 bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg hover:from-primary/15 hover:to-primary/10 transition-colors border border-primary/20"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 className="font-semibold text-primary hover:underline">
+                            {replay.title}
+                          </h4>
+                          {replay.description && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {replay.description}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant="default" className="ml-2 whitespace-nowrap">
+                          Watch <ExternalLink className="h-3 w-3 ml-1" />
+                        </Badge>
+                      </div>
+                    </a>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Resources */}
         {game.resources.length > 0 && (
           <Card>
@@ -278,31 +327,33 @@ export default function Arc3GameSpoiler() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {game.resources.map((resource, idx) => (
-                  <a
-                    key={idx}
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="font-medium text-primary hover:underline">
-                          {resource.title}
-                        </h4>
-                        {resource.description && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {resource.description}
-                          </p>
-                        )}
+                {game.resources
+                  .filter((r: GameResource) => r.type !== 'replay')
+                  .map((resource: GameResource, idx: number) => (
+                    <a
+                      key={idx}
+                      href={resource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h4 className="font-medium text-primary hover:underline">
+                            {resource.title}
+                          </h4>
+                          {resource.description && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {resource.description}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant="outline" className="capitalize">
+                          {resource.type}
+                        </Badge>
                       </div>
-                      <Badge variant="outline" className="capitalize">
-                        {resource.type}
-                      </Badge>
-                    </div>
-                  </a>
-                ))}
+                    </a>
+                  ))}
               </div>
             </CardContent>
           </Card>
@@ -316,7 +367,7 @@ export default function Arc3GameSpoiler() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {game.tags.map(tag => (
+                {game.tags.map((tag: string) => (
                   <Badge key={tag} variant="outline">
                     {tag}
                   </Badge>

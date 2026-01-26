@@ -1,10 +1,9 @@
 /**
- * shared/types.ts
- *
- * Author: Codex (GPT-5)
- * Date: 2025-12-20
- * PURPOSE: Shared TypeScript interfaces and types for ARC Explainer, including Worm Arena model insights
- *          reports with optional LLM summary fields.
+ * Author: Cascade
+ * Date: 2025-12-29
+ * PURPOSE: Shared TypeScript interfaces and types for ARC Explainer.
+ *          Includes comprehensive definitions for Worm Arena model insights,
+ *          performance metrics, and streaming status.
  * SRP/DRY check: Pass - shared types only.
  */
 
@@ -17,6 +16,18 @@ export interface ARCTask {
 export interface ARCExample {
   input: number[][];
   output: number[][];
+}
+
+/**
+ * Submission format for ARC evaluations (RE-ARC, benchmarks, etc.)
+ * Maps task IDs to arrays of predictions (one prediction per test input).
+ * Each prediction contains 2 attempts at solving that test input.
+ */
+export interface ARCSubmission {
+  [taskId: string]: {
+    attempt_1: number[][];  // First prediction attempt
+    attempt_2: number[][];  // Second prediction attempt
+  }[];  // Array of predictions (one per test input)
 }
 
 export interface PuzzleMetadata {
@@ -354,7 +365,7 @@ export interface PuzzleOverviewResponse {
  * LEGACY: Mixed accuracy/trustworthiness statistics interface
  * @deprecated This interface mixes accuracy and trustworthiness concepts!
  * Use PureAccuracyStats, TrustworthinessStats, or ConfidenceStats instead for clarity.
- * 
+ *
  * WARNING: Despite the name "AccuracyStats", the accuracyByModel array often
  * contains trustworthiness data filtered by trustworthiness_score.
  */
@@ -383,7 +394,7 @@ export interface AccuracyStats {
 
 /**
  * PURE ACCURACY STATS - Only boolean correctness metrics
- * 
+ *
  * Uses only is_prediction_correct and multi_test_all_correct boolean fields.
  * No trustworthiness or confidence filtering applied.
  * Shows true puzzle-solving success rates across all models.
@@ -408,7 +419,7 @@ export interface PureAccuracyStats {
 
 /**
  * TRUSTWORTHINESS STATS - AI confidence reliability metrics
- * 
+ *
  * Uses trustworthiness_score field (despite misleading name, this measures trustworthiness).
  * Focuses on how well AI confidence claims correlate with actual performance.
  * This is the PRIMARY METRIC for AI reliability research.
@@ -429,7 +440,7 @@ export interface TrustworthinessStats {
 
 /**
  * CONFIDENCE ANALYSIS STATS - AI confidence patterns and calibration
- * 
+ *
  * Analyzes AI confidence behavior across correct vs incorrect predictions.
  * Measures overconfidence, underconfidence, and calibration quality.
  */
@@ -821,12 +832,42 @@ export interface WormArenaModelInsightsSummary {
   costPerWin: number | null;
   costPerLoss: number | null;
   averageRounds: number | null;
+  minRounds: number | null;
+  maxRounds: number | null;
   averageScore: number | null;
+  minScore: number | null;
+  maxScore: number | null;
+  medianScore: number | null;
+  p25Score: number | null;
+  p75Score: number | null;
+  totalApples: number;
   averageDeathRoundLoss: number | null;
   earlyLosses: number;
   earlyLossRate: number;
   lossDeathReasonCoverage: number;
   unknownLosses: number;
+  // TrueSkill rating metrics
+  trueSkillMu: number | null;
+  trueSkillSigma: number | null;
+  trueSkillExposed: number | null;
+  // Leaderboard ranking
+  leaderboardRank: number | null;
+  totalModelsRanked: number | null;
+}
+
+export interface WormArenaModelInsightsLLMOutput {
+  summary: string;
+  deathAnalysis: Array<{
+    cause: string;
+    frequency: string;
+    pattern: string;
+  }>;
+  toughOpponents: Array<{
+    opponent: string;
+    record: string;
+    issue: string;
+  }>;
+  recommendations: string[];
 }
 
 export interface WormArenaModelInsightsReport {
@@ -913,6 +954,11 @@ export interface WormArenaGreatestHitGame {
   boardWidth: number;
   boardHeight: number;
   highlightReason: string;
+  // New optional fields (v3.x.x - Dec 2025)
+  endedAt?: string;                    // ISO timestamp for duration calculation
+  sumFinalScores?: number;             // Total apples from both players
+  durationSeconds?: number;            // Wall-clock game duration in seconds
+  category?: string;                   // Which dimension qualified it (e.g., 'duration', 'total_score', 'close_match')
 }
 
 export interface WormArenaGreatestHitsResponse {
@@ -1051,6 +1097,7 @@ export interface WormArenaBatchError {
  */
 export interface WormArenaModelWithGames {
   modelSlug: string;
+  modelName: string;
   gamesPlayed: number;
   wins: number;
   losses: number;
@@ -1061,6 +1108,46 @@ export interface WormArenaModelWithGames {
 export interface WormArenaModelsWithGamesResponse {
   success: boolean;
   models: WormArenaModelWithGames[];
+  error?: string;
+  timestamp: number;
+}
+
+/**
+ * Single bin in run length distribution (one round count with win/loss counts)
+ */
+export interface WormArenaRunLengthBin {
+  rounds: number;
+  wins: number;
+  losses: number;
+}
+
+/**
+ * Distribution data for one model (run lengths with win/loss breakdown)
+ */
+export interface WormArenaRunLengthModelData {
+  modelSlug: string;
+  totalGames: number;
+  bins: WormArenaRunLengthBin[];
+}
+
+/**
+ * Complete run length distribution response data
+ * Contains distribution for all qualifying models with metadata
+ */
+export interface WormArenaRunLengthDistributionData {
+  minGamesThreshold: number;
+  modelsIncluded: number;
+  totalGamesAnalyzed: number;
+  distributionData: WormArenaRunLengthModelData[];
+  timestamp: number;
+}
+
+/**
+ * API response for run length distribution endpoint
+ */
+export interface WormArenaRunLengthDistributionResponse {
+  success: boolean;
+  data?: WormArenaRunLengthDistributionData;
   error?: string;
   timestamp: number;
 }
@@ -1078,7 +1165,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
     emojiMapIncluded: true
   },
   standardExplanation: {
-    id: "standardExplanation", 
+    id: "standardExplanation",
     name: "📝 Standard Analysis",
     description: "Clear, straightforward analysis of puzzle patterns. AI explains the transformation rules step-by-step using simple language and logical reasoning.",
     content: `Explain the transformation rules observed in the {train} examples and applied to the {test} case. Your job is to explain in very simple terms what transformations were used.`,
@@ -1086,7 +1173,7 @@ export const PROMPT_TEMPLATES: Record<string, PromptTemplate> = {
   },
   educationalApproach: {
     id: "educationalApproach",
-    name: "🧠 Educational Approach", 
+    name: "🧠 Educational Approach",
     description: "Algorithmic thinking approach - AI teaches problem-solving methodology using step-by-step algorithms, computational processes, and learning-focused explanations.",
     content: `Help students understand the step-by-step algorithms and logical patterns in this puzzle. Explain transformations as computational processes and rules, focusing on algorithmic thinking and problem-solving methodology.`,
     emojiMapIncluded: false
@@ -1179,7 +1266,7 @@ export interface ModelConfig {
   supportsVision?: boolean;
   requiresPromptFormat?: boolean; // For OpenRouter models that need "prompt" instead of "messages"
   supportsStreaming?: boolean;
-  
+
   // Model Management fields
   isActive?: boolean; // Controls whether model appears in selectors (default: true)
   aliasFor?: string; // Key of the model this is an alias for
@@ -1428,3 +1515,18 @@ export interface OpenRouterSyncStatus {
     createdAt: string;          // ISO timestamp when model was created on OpenRouter
   }>;
 }
+
+/**
+ * RE-ARC SSE Event Types
+ * Shared between frontend and backend for type-safe SSE streaming.
+ */
+export type ReArcSSEEvent =
+  | { type: 'progress'; data: { current: number; total: number } }
+  | { type: 'complete'; data: { type: 'score'; score: number } }
+  | { type: 'complete'; data: { type: 'mismatches'; mismatches: Array<{
+      taskId: string;
+      expectedPredictions: number;
+      submittedPredictions: number;
+    }> } }
+  | { type: 'complete'; data: { type: 'malformed' } }
+  | { type: 'error'; data: { message: string } };
